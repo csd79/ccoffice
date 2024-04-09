@@ -5,7 +5,7 @@
 
 
 (defpackage #:csd79-lispworks-comwrapper
-  (:nicknames "COMWRAPPER")
+  (:nicknames "COMWRAPPER" "COMWRP")
   (:use #:cl #:com #:alexandria)
   (:export #:+rgb-black+
            #:+rgb-light-grey+

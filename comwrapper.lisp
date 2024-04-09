@@ -81,13 +81,27 @@
 (define-fn-nickname #'invoke-dispatch-method com-method)
 
 
-(eval-when (:load-toplevel :compile-toplevel :execute)
+#|(eval-when (:load-toplevel :compile-toplevel :execute)
   (defun comhelper (params body)
     (if params
         (let ((current (first params)))
           `(with-temp-interface (,(first current))
                                 ,(second current)
                                 ,(comhelper (rest params) body)))
+      `(progn ,@body))))|#
+
+
+(eval-when (:load-toplevel :compile-toplevel :execute)
+  (defun comhelper (params body)
+    (if params
+        (let* ((current (first params))
+               (sym     (first current))
+               (val     (second current)))
+          `(let ((,sym ,val))
+             (if (typep ,sym 'com-interface)
+               (with-temp-interface (,sym) ,val
+                 ,(comhelper (rest params) body))
+               ,(comhelper (rest params) body))))
       `(progn ,@body))))
 
 
@@ -101,6 +115,17 @@
 
 
 ;(defparameter *observe-app-running* nil)
+
+#|(defun latch-app (app)
+  (handler-case
+      ;; Trying to get instance already running.
+      (let ((running (get-active-object :progid app
+                                        :riid   'i-dispatch)))
+        ;; If none, trying to start fresh instance.
+        (or running
+            (create-object :progid app)))
+    ;; App probably not installed.
+    (com-error (e) nil)))|#
 
 
 (defmacro with-app ((variable application &key (visible t) (observe-running nil)) &body body)
