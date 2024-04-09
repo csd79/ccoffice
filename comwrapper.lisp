@@ -81,22 +81,6 @@
 (define-fn-nickname #'invoke-dispatch-method com-method)
 
 
-#|(eval-when (:load-toplevel :compile-toplevel)
-  (defun comlet*-helper (parameter-list &optional (result '()))
-    (if parameter-list
-        (let ((current (first parameter-list)))
-          (comlet*-helper (rest parameter-list)
-                          `(with-temp-interface (,(first current))
-                               ,(second current)
-                               ,result)))
-      result)))
-
-
-(defmacro comlet* (parameter-list &body body)
-  (comlet*-helper (nreverse parameter-list)
-                  (append '(progn) body)))|#
-
-
 (eval-when (:load-toplevel :compile-toplevel :execute)
   (defun comhelper (params body)
     (if params
@@ -116,36 +100,37 @@
            (setf (com-property app "Visible") vis)))
 
 
-(defparameter *observe-app-running* nil)
+;(defparameter *observe-app-running* nil)
 
 
-(defmacro with-app ((variable application) &body body)
+(defmacro with-app ((variable application &key (visible t) (observe-running nil)) &body body)
   (with-gensyms (running)
     `(with-com-initialized
        (comlet* ((,running  (get-active-object :progid ,application
                                                :riid   'i-dispatch
                                                :errorp nil))
-                  (,variable (or ,running
-                                 (create-object :progid ,application))))
-         (progn 
-           (set-app-visibility ,variable t)
-           ,@body)))))
-#|         (unwind-protect
+                 (,variable (or ,running
+                                (create-object :progid ,application))))
+         #|           (progn 
+                        (setf ,runnig-p ,running)
+                        (set-app-visibility ,variable visible)
+                        ,@body)))))|#
+         (unwind-protect
              (progn
-               (set-app-visibility ,variable t)
+               (set-app-visibility ,variable ,visible)
                ,@body)
-           (when *observe-app-running*
+           (when ,observe-running
              (unless ,running
-               (com-method ,variable "Quit"))))))))|#
+               (com-method ,variable "Quit"))))))))
 
 
-(defmacro excel ((variable) &body body)
-  `(with-app (,variable "Excel.Application")
+(defmacro excel ((variable &key (visible t) (observe-running nil)) &body body)
+  `(with-app (,variable "Excel.Application" :visible ,visible :observe-running ,observe-running)
      ,@body))
 
 
-(defmacro outlook ((variable) &body body)
-  `(with-app (,variable "Outlook.Application")
+(defmacro outlook ((variable &key (visible t) (observe-running nil)) &body body)
+  `(with-app (,variable "Outlook.Application" :visible ,visible :observe-running ,observe-running)
      ,@body))
 
 
@@ -154,10 +139,16 @@
 
 
 (defclass xlsx ()
-  ((app       :initarg :app       :Accessor app)
+  ((app       :initarg :app       :accessor app)
    (file      :initarg :file      :accessor file)
    (workbook  :initarg :workbook  :accessor workbook)
    (worksheet :initarg :worksheet :accessor worksheet)))
+
+
+(defun save-workbook (workbook file file-exists-p)
+  (if file-exists-p
+      (com-method workbook "Save")
+    (com-method workbook "SaveAs" file +xl-workbook-default+)))
 
 
 (defun close-workbook (workbook)
@@ -165,17 +156,18 @@
   (com-method workbook "Close" nil))
 
 
-(defun save-and-close-workbook (workbook file file-exists-p)
+#|(defun save-and-close-workbook (workbook file file-exists-p)
   (if file-exists-p
       (com-method workbook "Save")
     (com-method workbook "SaveAs" file +xl-workbook-default+))
-  (com-method workbook "Close" nil))
+  (com-method workbook "Close" nil))|#
 
 
-(defmacro with-xlsx ((xlsx file &key (read-only nil)) &body body)
+(defmacro with-xlsx ((xlsx &key (file nil) (save t)
+                           (close nil) (visible t) (observe-running nil)) &body body)
   (with-gensyms (file-exists-p wbs wb shs sh)
-    `(excel (xl)
-       (let ((,file-exists-p (probe-file ,file)))
+    `(excel (xl :visible ,visible :observe-running ,observe-running)
+       (let ((,file-exists-p (and ,file (probe-file ,file))))
          (comlet* ((,wbs (com-property xl "Workbooks"))
                    (,wb  (if ,file-exists-p
                              (com-method ,wbs "Open" (namestring ,file))
@@ -186,12 +178,15 @@
                                        :worksheet ,sh)))
              (unwind-protect
                  (progn ,@body)
-               (if ,read-only
+               (when ,file
+                 (when ,save  (save-workbook ,wb ,file ,file-exists-p))
+                 (when ,close (close-workbook ,wb))))))))))
+#|               (if ,read-only
                    (close-workbook ,wb)
-                 (save-and-close-workbook ,wb ,file ,file-exists-p)))))))))
+                 (save-and-close-workbook ,wb ,file ,file-exists-p)))))))))|#
 
 
-(defmacro with-new-xlsx ((xlsx) &body body)
+#|(defmacro with-new-xlsx ((xlsx) &body body)
   (with-gensyms (wbs wb shs sh)
     `(excel (xl)
             (comlet* ((,wbs (com-property xl "Workbooks"))
@@ -200,7 +195,7 @@
                       (,sh  (com-property ,shs "Item" 1)))
                      (let ((,xlsx (make-instance 'xlsx :app xl :workbook ,wb
                                                  :worksheet ,sh)))
-                       (progn ,@body))))))
+                       (progn ,@body))))))|#
 
 
 (defmacro with-range ((xlsx range x y &optional x2 y2) &body body)
@@ -345,6 +340,11 @@
                                  (cell-index 3 row))))
     (dotimes (i how-many)
       (com-method range "Insert" +xl-shift-down+))))
+
+
+(defun autofit-cols (xlsx)
+  (comlet* ((range (com-property (worksheet xlsx) "Columns")))
+    (com-method range "AutoFit")))
 
 
 ;; ----------------------------------------------------------------------

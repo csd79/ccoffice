@@ -43,7 +43,6 @@
            #:close-workbook
            #:save-and-close-workbook
            #:with-xlsx
-           #:with-new-xlsx
            #:with-range
            #:getcell
            #:setcell
@@ -60,5 +59,6 @@
            #:char-range
            #:apply-style
            #:insert-rows
+           #:autofit-cols
            #:body-from-file
            #:new-mail))
