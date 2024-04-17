@@ -4,10 +4,9 @@
 (in-package #:cl-user)
 
 
-(defpackage #:csd79-lispworks-comwrapper
-  (:nicknames "COMWRAPPER" "COMWRP")
+(defpackage #:ccom
   (:use #:cl #:com #:alexandria)
-  (:export #:+rgb-black+
+#|  (:export #:+rgb-black+
            #:+rgb-light-grey+
 	   #:+rgb-yellow+
            #:+rgb-light-yellow+
@@ -62,3 +61,5 @@
            #:autofit-cols
            #:body-from-file
            #:new-mail))
+|#
+)
