@@ -9,7 +9,7 @@
 
 
 ;; Provide an alias for an existing function.
-(defmacro define-fn-nickname (function symbol &key (setf-able nil))
+#|(defmacro define-fn-nickname (function symbol &key (setf-able nil))
   `(progn
      (intern (symbol-name ',symbol))
      (setf (fdefinition ',symbol) ,function)
@@ -17,7 +17,7 @@
        (setf (fdefinition '(setf ,symbol))
              #'(lambda (new-value &rest args)
                  (setf (apply ,function args)
-                       new-value))))))
+                       new-value))))))|#
 
 
 ;; Convert Excel column number to letter-based address.
@@ -44,7 +44,61 @@
 
 
 ;; ----------------------------------------------------------------------
-;; Basic COM crapper
+;; COM syntactic sugar
+
+
+  ;; <(PROPERTY OBJECT)"
+
+(defmacro comprop (property object)
+  (let ((symbol-string (symbol-name property)))
+    `(invoke-dispatch-get-property ,object ,symbol-string)))
+
+#|(eval-when (:load-toplevel)
+  (defun comprop-reader (stream char)
+    (declare (ignore char))
+    (nconc (list 'comprop)
+           (read stream)))
+
+  (set-macro-character #\< 'comprop-reader))
+|#
+
+;; >(METHOD OBJECT)"
+(defmacro commethod (method object &rest args)
+  (let ((symbol-string (symbol-name method)))
+    `(invoke-dispatch-method ,object ,symbol-string ,@args)))
+
+#|(eval-when (:load-toplevel)
+  (defun commethod-reader (stream char)
+    (declare (ignore char))
+    (nconc (list 'commethod)
+           (read stream)))
+
+  (set-macro-character #\> 'commethod-reader))
+|#
+
+(defparameter *list-reader* (get-macro-character #\( nil))
+
+(set-dispatch-macro-character
+ #\# #\<
+ (lambda (stream sub-char infix)
+   (declare (ignore sub-char infix))
+   (nconc (list 'comprop)
+          (read stream))))
+
+(set-dispatch-macro-character
+ #\# #\>
+ (lambda (stream sub-char infix)
+   (declare (ignore sub-char infix))
+   (nconc (list 'commethod)
+          (read stream))))
+
+
+
+
+
+
+;; ----------------------------------------------------------------------
+;; Basic COM wrapper
 
 
 ;; Is COM initialized?
@@ -64,8 +118,8 @@
 
 
 ;; Alieses for uncomfortably long function names.
-(define-fn-nickname #'invoke-dispatch-get-property com-property :setf-able t)
-(define-fn-nickname #'invoke-dispatch-method com-method)
+#|(define-fn-nickname #'invoke-dispatch-get-property com-property :setf-able t)
+(define-fn-nickname #'invoke-dispatch-method com-method)|#
 
 
 ;; Generate binding forms for COMLET+.
@@ -113,18 +167,14 @@
 
 
 ;; ----------------------------------------------------------------------
-;; Excel
+;; Workbooks, worksheets
 
 
 ;; Describing Excel region of interest.
-(defclass xlsx ()
+(defclass xlsx-handle ()
   ((fullname  :initarg :fullname  :accessor fullname)
    (name      :initarg :name      :accessor name)
-   (sheetname :initarg :sheetname :accessor sheetname)
-   (x1        :initarg :x1        :accessor x1        :initform nil)
-   (y1        :initarg :y1        :accessor y1        :initform nil)
-   (x2        :initarg :x2        :accessor x2        :initform nil)
-   (y2        :initarg :y2        :accessor y2        :initform nil)))
+   (sheetname :initarg :sheetname :accessor sheetname)))
 
 
 (defconstant +xl-calculation-automatic+ -4105)
@@ -148,7 +198,7 @@
                (com-property ,variable "ScreenUpdating") t)))))
 
 
-;; Create a list of XLSX objects, each representing an open Excel workbook.
+;; Create a list of XLSX-HANDLE objects, each representing an open Excel workbook.
 (defun open-workbooks ()
   (excel (xl)
     (comlet* ((workbooks (com-property xl "Workbooks"))
@@ -160,17 +210,17 @@
                       (worksheets  (com-property workbook    "Worksheets"))
                       (first-sheet (com-property worksheets  "Item" 1))
                       (sheetname   (com-property first-sheet "Name")))
-              (make-instance 'xlsx
+              (make-instance 'xlsx-handle
                              :fullname  fullname
                              :name      name
                              :sheetname sheetname))))))
 
 
 ;; Return a list of the names of every worksheet in an open Excel file.
-(defun worksheet-names (xlsx)
+(defun worksheet-names (handle)
   (excel (xl)
     (comlet* ((workbooks (com-property xl "Workbooks"))
-              (workbook  (com-property workbooks "Item" (name xlsx))))
+              (workbook  (com-property workbooks "Item" (name handle))))
       (when workbook
         (comlet* ((worksheets (com-property workbook "Worksheets"))
                   (count      (com-property worksheets "Count")))
@@ -179,45 +229,46 @@
                   (com-property worksheet "Name"))))))))
 
 
-;; Create a copy of XLSX.
-(defun copy-xlsx (xlsx)
-  (make-instance 'xlsx
-                 :fullname  (fullname xlsx)
-                 :name      (name xlsx)
-                 :sheetname (sheetname xlsx)
-                 :x1        (x1 xlsx)
-                 :y1        (y1 xlsx)
-                 :x2        (x2 xlsx)
-                 :y2        (y2 xlsx)))
+;; Create a copy of HANDLE.
+(defun copy-xlsx-handle (handle)
+  (make-instance 'xlsx-handle
+                 :fullname  (fullname handle)
+                 :name      (name handle)
+                 :sheetname (sheetname handle)))
 
 
 ;; Return a list of every worksheet in every open Excel file.
 (defun open-worksheets ()
   (let ((workbooks (open-workbooks))
         (results   '()))
-    (dolist (workbook workbooks)
-      (dolist (sheetname (worksheet-names workbook))
-        (let ((new-xlsx (copy-xlsx workbook)))
-          (setf (sheetname new-xlsx) sheetname)
-          (push new-xlsx results))))
+    (dolist (handle workbooks)
+      (dolist (sheetname (worksheet-names handle))
+        (let ((new-handle (copy-xlsx-handle handle)))
+          (setf (sheetname new-handle) sheetname)
+          (push new-handle results))))
     (nreverse results)))
 
 
 ;; Get interface pointer for workbook described by XLSX.
-(defun grab-workbook (xlsx)
+(defun grab-workbook (handle)
   (excel (xl)
     (comlet* ((workbooks  (com-property xl "Workbooks")))
-      (com-property workbooks "Item" (name xlsx)))))
+      (com-property workbooks "Item" (name handle)))))
 
 
 ;; Get interface pointer for worksheet described by XLSX.
-(defun grab-worksheet (xlsx)
+(defun grab-worksheet (handle)
   (excel (xl)
-    (comlet* ((workbook   (grab-workbook xlsx))
+    (comlet* ((workbook   (grab-workbook handle))
               (worksheets (com-property workbook "Worksheets")))
-      (com-property worksheets "Item" (sheetname xlsx)))))
+      (com-property worksheets "Item" (sheetname handle)))))
 
 
+;; ----------------------------------------------------------------------
+;; Ranges, values
+
+
+;; Create range object within given 'coordinates'.
 (defun range (worksheet &optional (x1 nil) (y1 nil) (x2 nil) (y2 nil))
   (excel (xl)
     (apply #'com-property worksheet "Range"
@@ -228,46 +279,36 @@
                      (list (cell-index x2 y2)))))))
 
 
-#|;; Create new XLSX with added range.
-(defun add-range (xlsx &optional (x1 nil) (y1 nil) (x2 nil) (y2 nil))
-  (let ((new (copy-xlsx xlsx)))
-    (setf (x1 new) x1
-          (y1 new) y1
-          (x2 new) x2
-          (y2 new) y2)
-    new))
+;; Helper function to create binding clauses for LET-RANGE.
+(eval-when (:load-toplevel :compile-toplevel :execute)
+  (defun let-range-helper (bindings)
+    (when bindings
+      (destructuring-bind (var (handle &optional x1 y1 x2 y2))
+          (first bindings)
+        (cons `(,var (range (grab-worksheet ,handle) ,x1 ,y1 ,x2 ,y2))
+              (let-range-helper (rest bindings)))))))
 
 
-;; Get interface pointer for range described by XLSX.
-(defun grab-range (xlsx)
-  (with-slots (x1 y1 x2 y2) xlsx
-    (when (and x1 y1)
-      (excel (xl)
-        (comlet* ((worksheet (grab-worksheet xlsx)))
-          (range worksheet x1 y1 x2 y2))))))|#
-
-
-(defun let-range-helper (bindings)
-  (when bindings
-    (destructuring-bind (var (xlsx &optional x1 y1 x2 y2))
-        (first bindings)
-      (cons `(,var (grab-range (add-range ,xlsx ,x1 ,y1 ,x2 ,y2)))
-            (with-range-helper (rest bindings))))))
-
-
+;; Local range bindings.
 (defmacro let-range (bindings &body body)
   `(comlet* ,(let-range-helper bindings)
      ,@body))
 
            
+;; Get value(s) of given range.
+(defun get-range (worksheet x1 y1 &optional (x2 nil) (y2 nil))
+  (comlet* ((range (range worksheet x1 y1 x2 y2)))
+    (com-property range "Value2")))
 
 
+;; Set value(s) of given range.
+(defun set-range (worksheet value x1 y1 &optional (x2 nil) (y2 nil))
+  (comlet* ((range (range worksheet x1 y1 x2 y2)))
+    (setf (com-property range "Value2") value)))
 
 
-
-
-
-
+;; ----------------------------------------------------------------------
+;; Cell formatting
 
 
 ;; Constants used to copy cell formatting.
@@ -277,26 +318,16 @@
 
 
 ;; Copy cell formatting between ranges.
-(defun copy-formatting (from x y into &optional (x1 nil) (y1 nil) (x2 nil) (y2 nil))
+(defun copy-formatting (range-from range-into)
   (excel (xl)
-    (let ((from-range (add-range from x y))
-          (into-range (add-range into x1 y1 x2 y2)))
-      (comlet* ((source (grab-range from-range))
-                (target (grab-range into-range)))
-        (com-method source "Copy")
-        (com-method target "PasteSpecial" +xl-paste-formats+)
-        (com-method target "PasteSpecial" +xl-paste-comments+)
-        (com-method target "PasteSpecial" +xl-paste-validation+)))))
-
-
-(defun get-range (worksheet x1 y1 &optional (x2 nil) (y2 nil))
-  (comlet* ((range (range worksheet x1 y1 x2 y2)))
-    (com-property range "Value2")))
-
-
-(defun set-range (worksheet value x1 y1 &optional (x2 nil) (y2 nil))
-  (comlet* ((range (range worksheet x1 y1 x2 y2)))
-    (setf (com-property range "Value2") value)))
+;    (com-method range-from "Copy")
+    #>(copy range-from)
+    #>(pastespecial range-into +xl-paste-formats+)
+    #>(pastespecial range-into +xl-paste-comments+)
+    #>(pastespecial range-into +xl-paste-validation+)))
+#|    (com-method range-into "PasteSpecial" +xl-paste-formats+)
+    (com-method range-into "PasteSpecial" +xl-paste-comments+)
+    (com-method range-into "PasteSpecial" +xl-paste-validation+)))|#
 
 
 
@@ -304,30 +335,39 @@
 
 
 
-
+(defun test8 (handle)
+  (excel (xl)
+    (comlet* ((sheet (grab-worksheet handle))
+              (from  (range sheet 1 1 1 6))
+              (into  (range sheet 3 1 3 6)))
+      (copy-formatting from into))))
       
     
-
-
-(defun test6 (xlsx)
+#|(defun test7 (handle)
   (excel (xl)
-    (comlet* ((worksheet (grab-worksheet xlsx))
+    (let-range ((from (handle 2 1 2 30))
+                (onto (handle 8 1 8 30)))
+      (copy-formatting from onto))))|#
+
+
+#|(defun test6 (handle)
+  (excel (xl)
+    (comlet* ((worksheet (grab-worksheet handle))
               (data      (get-range worksheet 1 1 2 30)))
       (set-range worksheet data 6 1 7 30))))
 
 
-(defun test5 (xlsx)
+(defun test5 (handle)
   (excel (xl)
-    (with-no-screen-updating (xl)
-      (comlet* ((worksheet (grab-worksheet xlsx))
-                (data      (get-range worksheet 1 1 2 30)))
-        (set-range worksheet data 6 1 7 30)))))
+    (comlet* ((worksheet (grab-worksheet handle))
+              (data      (get-range worksheet 1 1 2 30)))
+      (set-range worksheet data 6 1 7 30))))
 
 
-(defun test4 (xlsx)
+(defun test4 (handle)
   (excel (xl)
-    (comlet* ((worksheet (grab-worksheet xlsx)))
-      (get-range worksheet 2 1 2 30)))))
+    (comlet* ((worksheet (grab-worksheet handle)))
+      (get-range worksheet 2 1 2 30))))|#
 
 
 
@@ -377,23 +417,6 @@
                  (when ,close (close-workbook ,wb))))))))))
 
 
-(defmacro with-range ((xlsx range x y &optional x2 y2) &body body)
-  `(comlet* ((,range (apply #'com-property (worksheet ,xlsx) "Range"
-                             (append (list (cell-index ,x ,y))
-                                     (when (and ,x2 ,y2)
-                                       (list (cell-index ,x2 ,y2)))))))
-     ,@body))
-
-
-(defun getcell (xlsx x y)
-  (with-range (xlsx range x y)
-    (com-property range "Value2")))
-
-
-(defun setcell (xlsx x y value)
-  (with-range (xlsx range x y)
-    (setf (com-property range "Value2") value)))
-
 
 (defun locate-string (string list partial)
   (let ((index (if partial
@@ -412,31 +435,6 @@
 
 (defun worksheet-name (worksheet)
   (com-property worksheet "Name"))
-
-
-(defun list-sheet-names (worksheets)
-  (let ((count (com-property worksheets "Count")))
-    (loop for i from 1 upto count collecting
-          (worksheet-name (com-property worksheets "Item" i)))))
-
-
-(defun get-sheet (xlsx sheet &optional partial)
-  (comlet* ((worksheets (com-property (workbook xlsx) "Worksheets")))
-    (let ((number (typecase sheet
-                    (number sheet)
-                    (string (locate-string
-                             sheet (list-sheet-names worksheets) partial)))))
-      (values
-       (com-property worksheets "Item" number)
-       number))))
-
-
-(defgeneric select-sheet (xlsx sheet &key partial))
-
-(defmethod select-sheet ((xlsx xlsx) sheet &key partial)
-  (setf (worksheet xlsx)
-        (get-sheet xlsx sheet partial))
-  xlsx)
 
 
 (defgeneric rename-sheet (xlsx new-name &key sheet partial))
