@@ -24,26 +24,6 @@
        (co-uninitialize))))
 
 
-;; Generate binding forms for COMLET+.
-(eval-when (:load-toplevel :compile-toplevel :execute)
-  (defun comhelper (params body)
-    (if params
-        (let* ((current (first params))
-               (sym     (first current))
-               (val     (second current)))
-          `(let ((,sym ,val))
-             (if (typep ,sym 'com-interface)
-               (with-temp-interface (,sym) ,val
-                 ,(comhelper (rest params) body))
-               ,(comhelper (rest params) body))))
-      `(progn ,@body))))
-
-
-;; Locally bind both variables and interface pointers.
-(defmacro comlet* (parameter-list &body body)
-  (comhelper parameter-list body))
-
-
 ;; Set visibility for an application.
 (defun set-app-visibility (var vis)
   (comlet* ((app #<(application var)))
@@ -104,11 +84,13 @@
 ;; Binding context for talking to Excel.
 (defmacro excel ((xl &key (visible t) (observe-running nil)) &body body)
   `(with-app (,xl "Excel.Application" :visible ,visible :observe-running ,observe-running)
-     (unwind-protect
+     ,@body))
+;; The following seemingly doesn't work if no workbook is open.
+#|     (unwind-protect
          (progn 
            (excel-speed-up ,xl)
            ,@body)
-       (excel-slow-down ,xl))))
+       (excel-slow-down ,xl))))|#
 
 
 ;; Create a list of XLSX-HANDLE objects, each representing an open Excel workbook.
@@ -241,10 +223,83 @@
 
 
 
-(defun test (handle)
+
+
+
+
+(defun ccom-test (handle)
   (excel (xl)
     (let-range ((from (handle 1 1 1 10))
                 (into (handle 3 1 3 10)))
       (set-range into
                  (get-range from))
       (copy-formatting from into))))
+
+
+;; ----------------------------------------------------------------------
+;; FELADAT
+
+#|
+A tankerületi igazgatók és gazdasági vezetõk illetményemelésben részesülnek 2024. április 1. napjával.
+Kérem, hogy a melléket iratminták alapján scripttel készítsétek el a tankerületi vezetõk kinevezésmódosításait 
+word és pdf formátumban is. A táblázatok tartalmazzák a szükséges adatokat. Szeretném kérni, hogy a fájl 
+megnevezésében szerepeljen a vezetõ neve, titulusa és az iktatószám is, illetve a születési idõnél a hónap 
+betûvel történõ kiírását kérem.
+|#
+
+
+#|
+indító adatok:
+ - dokumentum template, mezõjelölésekkel
+ - kontroll lista (táblázat lap)
+ - kimenõ mappa
+
+
+teendõ:
+ - kontrol lista betöltése táblázatba
+ - iteráció. fn:
+   - új dokumentum fájlnév összeállítása: kimenõ mappa + "Kinevezésmódosítás, " + név, titulus, iktatószám
+   - template dokumentum megnyitása
+   - iteráció oszlopokon, mindegyikhez mezõjelölést összerakni (pl. "<C>")
+     - template-ben kicserélni az oszlop mezõjelölését a tartalommal
+   - dokumentum mentése a fent összerakott néven
+   - dokumentum exportálása pdf-ként ugyanazon a néven
+   - dokumentum bezárása
+|#
+
+
+(defparameter *workdir*       "g:\\___WIP___\\2024.04.01. TK igazgató, Gazd.vez. kinevezésmódosítások\\")
+(defparameter *doc-template*  (concatenate 'string *workdir* "Kinevezésmódosítás_tankerületi igazgató.docx"))
+(defparameter *control-book*  (concatenate 'string *workdir* "Illetményváltozás_TK_complete.xlsx"))
+(defparameter *control-sheet* "Tankerületi igazgatók")
+(defparameter *outdir*        (concatenate 'string *workdir* "out\\"))
+
+
+(defconstant +xl-to-left+          -4159)
+(defconstant +xl-up+               -4162)
+
+(defun docfactory ()
+  (excel (xl)
+    (comlet* ((workbooks #<(workbooks xl))
+              (workbook  #>(open workbooks (namestring *control-book*))))
+      (print workbook))))
+
+
+              (workbook  #<(item workbooks "Illetményváltozás_TK_complete")))
+      (print workbook))))
+
+
+
+
+(control-book (make-instance 'xlsx
+                                           :fullname *control-book*
+                                           :sheetname *control-sheet*))
+
+
+
+(workbooks  #<(workbooks xl)))
+;              (workbook   #>(open workbooks (namestring *control-book*))))
+      (print workbooks))))
+#|              (worksheets #<(worksheets workbook))
+              (worksheet  #<(item worksheets *control-sheet*)))
+      (print #<(name worksheet)))))|#
