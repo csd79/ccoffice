@@ -55,14 +55,15 @@
 
 
 ;;; Faster exchange with Excel.
-#|(defmacro excellerate ((object) &body body)
+(defmacro excellerate ((object) &body body)
   (let ((excel (gensym)))
-    `(cclet* ((,excel #p(application ,object)))
+    `(cclet* ((,excel (com-property 'application ,object)))
        (unwind-protect
            (progn
              (excel-speed-up ,excel)
              ,@body)
-         (excel-slow-down ,excel)))))|#
+         (excel-slow-down ,excel)))))
+
 
 
 ;;; Open given document with default application, hopefully Excel.

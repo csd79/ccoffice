@@ -5,7 +5,7 @@
 
 
 (defpackage #:ccom
-  (:use #:cl); #:com); #:alexandria)
+  (:use #:cl)
 #|  (:export #:<
            #:>
            #:cclet*
