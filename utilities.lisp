@@ -31,15 +31,6 @@
   (format nil "~a~d" (column column) row))
 
 
-;;; Replace all occurences of OLD substrings with corresponding NEW ones (case-insensitive).
-(defun replace-substrings (string olds news)
-  (if olds
-    (replace-substrings (cl-ppcre:regex-replace-all (format nil "(?i)~a" (first olds)) string (first news))
-                        (rest olds)
-                        (rest news))
-    string))
-
-
 ;;; Return s-expression read from INPUT as a string.
 (defun preread-sexp (input &key (opening-char #\() (closing-char #\)))
   (with-output-to-string (output)
