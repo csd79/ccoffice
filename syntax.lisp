@@ -4,6 +4,35 @@
 (in-package #:ccom)
 
 
+#|
+Comparison:
+
+(com:with-temp-interface (workbook)
+    (com:with-temp-interface (workbooks)
+        (com:invoke-dispatch-get-property global "Workbooks")
+      (com:invoke-dispatch-method workbooks "Add" +xl-worksheet+))
+  (com:with-temp-interface (worksheet)
+      (com:with-temp-interface (sheets)
+          (com:invoke-dispatch-get-property workbook "Worksheets")
+        (com:invoke-dispatch-get-property sheets "Item" 1))
+    (let ((address "A1"))
+      (get-value worksheet address))
+    (setf (com:invoke-dispatch-get-property worksheet "Name") "New name")))
+
+             ||     ||     ||
+             \/     \/     \/
+
+(cclet* ((workbooks #p(workbooks global))             ; value of property 'workbooks' of object 'global'
+         (workbook  #m(add workbooks +xl-worksheet+)) ; method 'add' on object 'workbooks' with arg '+xl-worksheet+'
+         (sheets    #p(worksheets workbook))
+         (worksheet #p(item sheets 1))                ; value of property 'item' of object 'sheets' with arg '1'
+         (address   "A1")                             ; plain string
+         (range     #p(range worksheet address)))
+  (print #p(value2 range))
+  (setf #p(name worksheet) "New name"))               ; modify value of property 'name' of object 'worksheet'
+|#
+
+
 ;;; ----------------------------------------------------------------------
 ;;; COM property and method calls
 
@@ -34,23 +63,18 @@
 ;;; Binding interface pointers
 
 
-;;; Generate binding clauses for CCLET*.
-(eval-when (:load-toplevel :compile-toplevel :execute)
-  (defun cclet-bindings (bindings body)
-    (if bindings
-      (destructuring-bind (var expr)
-          (first bindings)
-        `(let ((,var ,expr))
-           (if (typep ,var 'com::com-interface)
-             ;; If EXPR returned an interface pointer, increase her reference count.
-             (com::with-temp-interface (,var) ,var
-               ,(cclet-bindings (rest bindings) body))
-             ;; If EXPR returned an object of a different type, just carry on.
-             ,(cclet-bindings (rest bindings) body))))
-      body)))
-
-
 ;;; Local binding context for both interface pointers and plain Lisp values.
 (defmacro cclet* (bindings &body body)
-  (let ((enclosed `(progn ,@body)))
-    (cclet-bindings bindings '() enclosed)))
+  (when bindings
+    (let ((vars (mapcar #'first bindings)))
+      `(with-com-initialized
+         (let* ,bindings
+           (flet ((do-iptrs (fn)
+                    (dolist (var ',vars)
+                      (when (typep var 'com::com-interface)
+                        (funcall fn var)))))
+             (unwind-protect
+                 (progn
+                   (do-iptrs #'com:add-ref)
+                   ,@body)
+               (do-iptrs #'com:release))))))))

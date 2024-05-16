@@ -31,16 +31,19 @@
   (format nil "~a~d" (column column) row))
 
 
-;;; Return s-expression read from INPUT as a string.
-(defun preread-sexp (input &key (opening-char #\() (closing-char #\)))
-  (with-output-to-string (output)
-    (let ((depth 0))
-      (loop for current = (read-char input) doing
-            (progn
-              (write-char current output)
-              (when (char= current opening-char)
-                (incf depth))
-              (when (char= current closing-char)
-                (decf depth)
-                (when (< depth 1)
-                  (loop-finish))))))))
+;;; Is COM initialized?
+(defparameter *com-init-count* 0)
+
+
+;;; Binding context for COM operations.
+(defmacro with-com-initialized (&body body)
+  `(unwind-protect
+       (progn
+         (when (zerop *com-init-count*)
+           (com::co-initialize))
+         (incf *com-init-count*)
+         ,@body)
+     (progn
+       (decf *com-init-count*)
+       (when (zerop *com-init-count*)
+         (com::co-uninitialize)))))
