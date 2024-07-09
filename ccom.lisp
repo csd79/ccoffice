@@ -38,8 +38,6 @@
        (setf #p(calculation ,excel) +xl-calculation-automatic+))))
 
 
-
-
 ;;; Open given document with default application, hopefully Excel.
 (defun get-document (fullname)
   (com::get-object fullname :riid 'com::i-dispatch))
@@ -87,8 +85,23 @@
 (defconstant +xl-whole+                1)
 (defconstant +xl-previous+             2) 
 
+(defmacro with-used-edges ((worksheet left top right bottom) &body body)
+  (let ((whole (gensym))
+        (from  (gensym)))
+    `(cclet* ((,whole  #p(cells ,worksheet))
+              (,top    #p(row #p(end ,whole +xl-up+)))
+              (,left   #p(column #p(end ,whole +xl-to-left+)))
+              (,from   (range ,worksheet ,left ,top))
+              (,bottom #p(row #m(find ,whole "*" ,from +xl-values+
+                                     +xl-whole+ +xl-by-rows+ +xl-previous+)))
+              (,right  #p(column #m(find ,whole "*" ,from +xl-values+
+                                        +xl-whole+ +xl-by-columns+
+                                        +xl-previous+))))
+       ,@body)))
+
+
 ;;; Locate used range of WORKSHEET.
-(defun used-range (worksheet)
+#|(defun used-range (worksheet)
   (cclet* ((whole  #p(cells worksheet))
            (top    #p(row #p(end whole +xl-up+)))
            (left   #p(column #p(end whole +xl-to-left+)))
@@ -100,7 +113,10 @@
                                      +xl-previous+))))
     (values
      (range worksheet left top right bottom)
-     left top right bottom)))
+     left top right bottom)))|#
+(defun used-range (worksheet)
+  (with-used-edges (worksheet left top right bottom)
+    (range worksheet left top right bottom)))
 
 
 ;;; ----------------------------------------------------------------------
@@ -160,22 +176,38 @@
 ;;; Excel indexing & searching basics
 
 
+(defun column->row (array &key (element-type t) (getter #'identity))
+  (let* ((height (array-dimension array 0))
+         (result (make-array height :element-type element-type)))
+    (loop for i from 0 below height doing
+          (setf (svref result i)
+                (funcall getter
+                         (aref array i 0))))
+    result))
+
+
+
 ;;; Create index vector from values of given COLUMN in WORKSHEET.
 ;;; :ELEMENT-TYPE and :GETTER must cooperate!
 (defun index (worksheet column &key (element-type t) (getter #'identity))
   (cclet* ((app (get-excel worksheet)))
     (excellerate (app)
-      (multiple-value-bind (used left top right bottom)
+      (with-used-edges (worksheet left top right bottom)
+#|      (multiple-value-bind (used left top right bottom)
           (used-range worksheet)
-        (declare (ignore used left top right))
+        (declare (ignore used left top right))|#
+        (declare (ignore left top right))
         (cclet* ((range  (range worksheet column 2 column bottom))
-                 (raw    #p(value2 range))
-                 (length (array-dimension raw 0))
+                 (raw    #p(value2 range)))
+          (column->row raw
+                       :element-type element-type
+                       :getter getter))))))
+#|                 (length (array-dimension raw 0))
                  (result (make-array length :element-type element-type)))
           (loop for i from 0 below length doing
                 (setf (svref result i)
                       (funcall getter (aref raw i 0))))
-          result)))))
+          result)))))|#
 
 
 ;;; Search INDEX for value, collect positions of occurences found.
@@ -189,9 +221,11 @@
 (defun filter-rows (worksheet index value)
   (cclet* ((app (get-excel worksheet)))
     (excellerate (app)
-      (multiple-value-bind (used left top right bottom)
+#|      (multiple-value-bind (used left top right bottom)
           (used-range worksheet)
-        (declare (ignore used top bottom))
+        (declare (ignore used top bottom))|#
+      (with-used-edges (worksheet left top right bottom)
+        (declare (ignore top bottom))
         (loop for r in (occurances index value)
               for rr = (+ r 2) collecting
               #p(value2 (range worksheet left rr right rr)))))))
@@ -219,12 +253,12 @@
                  files sheets columns)))
 
 
-;;; ----------------------------------------------------------------------
-;;; Excel: searchable worksheets
 
 
-;(defclass ixlsx ()
-;  ((path :
+
+
+
+
 
 
 
@@ -319,7 +353,8 @@
             (wsheet  #p(item wsheets 1)))
      (let ((index (index wsheet 1 :element-type 'integer
                          :getter #'read-from-string)))
-       (filter-rows wsheet index sztsz))))
+       index)))
+;       (filter-rows wsheet index sztsz))))
 
 
 (defun test3 (sztsz)
