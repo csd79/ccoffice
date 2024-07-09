@@ -97,7 +97,7 @@
               (,right  #p(column #m(find ,whole "*" ,from +xl-values+
                                         +xl-whole+ +xl-by-columns+
                                         +xl-previous+))))
-       ,@body)))
+         ,@body)))
 
 
 ;;; Locate used range of WORKSHEET.
@@ -186,28 +186,33 @@
     result))
 
 
-
 ;;; Create index vector from values of given COLUMN in WORKSHEET.
 ;;; :ELEMENT-TYPE and :GETTER must cooperate!
 (defun index (worksheet column &key (element-type t) (getter #'identity))
   (cclet* ((app (get-excel worksheet)))
     (excellerate (app)
       (with-used-edges (worksheet left top right bottom)
-#|      (multiple-value-bind (used left top right bottom)
-          (used-range worksheet)
-        (declare (ignore used left top right))|#
         (declare (ignore left top right))
         (cclet* ((range  (range worksheet column 2 column bottom))
                  (raw    #p(value2 range)))
           (column->row raw
                        :element-type element-type
                        :getter getter))))))
-#|                 (length (array-dimension raw 0))
-                 (result (make-array length :element-type element-type)))
-          (loop for i from 0 below length doing
-                (setf (svref result i)
-                      (funcall getter (aref raw i 0))))
-          result)))))|#
+
+
+;;; Find the column that has TITLE in its header.
+(defun title-column (worksheet title &key (key #'identity) (header-row 1) (test #'string-equal)
+                         (from-end nil) (start nil) (end nil))
+  (with-used-edges (worksheet left top right bottom)
+;    (declare (ignore top bottom))
+    (cclet* ((header #p(value2 (range worksheet left header-row right header-row))))
+      (if from-end
+        (loop for i from (1- (or end right)) downto (1- (or start left))
+              for v = (funcall key (aref header 0 i))
+              thereis (and (funcall test title v) (1+ i)))
+        (loop for i from (1- (or start left)) upto (1- (or end right))
+              for v = (funcall key (aref header 0 i))
+              thereis (and (funcall test title v) (1+ i)))))))
 
 
 ;;; Search INDEX for value, collect positions of occurences found.
@@ -218,48 +223,50 @@
 
 
 ;;; List rows of WORKSHEET where INDEX is VALUE.
-(defun filter-rows (worksheet index value)
+#|(defun filter-rows (worksheet index value)
   (cclet* ((app (get-excel worksheet)))
     (excellerate (app)
-#|      (multiple-value-bind (used left top right bottom)
-          (used-range worksheet)
-        (declare (ignore used top bottom))|#
       (with-used-edges (worksheet left top right bottom)
-        (declare (ignore top bottom))
+;        (declare (ignore top bottom))
         (loop for r in (occurances index value)
               for rr = (+ r 2) collecting
-              #p(value2 (range worksheet left rr right rr)))))))
+              #p(value2 (range worksheet left rr right rr)))))))|#
+(defun filter-rows (worksheet index-col values &key (idx-element-type t) (idx-getter #'identity) (test #'equalp))
+  (cclet* ((app   (get-excel worksheet))
+           (index (index worksheet index-col :element-type idx-element-type :getter idx-getter))
+           (rows  (apply #'append (mapcar #'(lambda (value)
+                                              (occurances index value test))
+                                          values))))
+    (with-used-edges (worksheet left top right bottom)
+;      (declare (ignore bottom))
+      (excellerate (app)
+        (loop for r in rows
+              for rr = (+ r 2)
+              collecting #p(value2 (range worksheet left rr right rr)))))))
 
 
 ;;; List rows from given FILE/SHEET whose index equals VALUE.
-(defun search-file (value file sheet column &key (element-type t) (getter #'identity))
-  (cclet* ((wbook (get-document (namestring file)))
+(defun search-file (values file sheet title &key (element-type t) (getter #'identity))
+  (cclet* ((wbook   (get-document (namestring file)))
            (wsheets #p(worksheets wbook))
-           (wsheet #p(item wsheets sheet))
-           (index  (index wsheet column
-                          :element-type element-type
-                          :getter getter)))
-    (filter-rows wsheet index value)))
+           (wsheet  #p(item wsheets sheet))
+           (column  (title-column wsheet title)))
+#|           (index   (index wsheet
+                           (title-column wsheet title)
+                           :element-type element-type
+                           :getter getter)))|#
+    (filter-rows wsheet column values :idx-element-type element-type :idx-getter getter)))
 
 
 ;;; List rows corresponding to VALUE from multiple files.
-(defun search-files (value files &key (sheets '()) (columns '())
+(defun search-files (values files &key (sheets '()) (titles '())
                            (element-type t) (getter #'identity))
   (apply #'append
-         (mapcar #'(lambda (file sheet column)
-                     (search-file value file sheet column
+         (mapcar #'(lambda (file sheet title)
+                     (search-file values file sheet title
                                   :element-type element-type
                                   :getter getter))
-                 files sheets columns)))
-
-
-
-
-
-
-
-
-
+                 files sheets titles)))
 
 
 ;;; ----------------------------------------------------------------------
@@ -357,14 +364,36 @@
 ;       (filter-rows wsheet index sztsz))))
 
 
-(defun test3 (sztsz)
-  (search-files sztsz
+(defun test3 (values)
+  (search-files values
                 (list (namestring (workfile *alap*))
                       (namestring (workfile *rendszeres*)))
                 :sheets '(1 1)
-                :columns '(1 1)
+                :titles '("sztsz" "sztsz")
                 :element-type 'integer
                 :getter #'read-from-string))
+
+
+
+(defun test4 ()
+  (cclet* ((wbook   (get-document (namestring (workfile *alap*))))
+           (wsheets #p(worksheets wbook))
+           (wsheet  #p(item wsheets 1)))
+    (idx-column wsheet "SZtSz" :from-end t)))
+
+
+
+;(defun filter-rows (worksheet index-col values &key (idx-element-type t) (getter #'identity) (test #'equalp))
+;(index worksheet index-col :element-type idx-element-type :getter getter))
+
+(defun test5 ()
+  (cclet* ((wbook   (get-document (namestring (workfile *alap*))))
+           (wsheets #p(worksheets wbook))
+           (wsheet  #p(item wsheets 1))
+           (col-no  (title-column wsheet "sztsz")))
+;    (index wsheet col-no :element-type 'integer :getter #'read-from-string)))
+    (filter-rows wsheet col-no '(10049639) :idx-element-type 'integer :idx-getter #'read-from-string)))
+
 
 
 #|
