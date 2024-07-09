@@ -17,5 +17,18 @@
            #:get-document
            #:open-worksheets
            #:range
+           #:with-used-edges
            #:used-range
-           #:copy-formatting))
+           #:copy-formatting
+           #:autofit-cols
+           #:font
+           #:apply-style
+           #:column->row
+           #:index
+           #:title-column
+           #:occurances
+           #:filter-rows
+           #:search-file
+           #:search-files
+           #:word-replace-text
+))

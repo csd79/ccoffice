@@ -101,19 +101,6 @@
 
 
 ;;; Locate used range of WORKSHEET.
-#|(defun used-range (worksheet)
-  (cclet* ((whole  #p(cells worksheet))
-           (top    #p(row #p(end whole +xl-up+)))
-           (left   #p(column #p(end whole +xl-to-left+)))
-           (from   (range worksheet left top))
-           (bottom #p(row #m(find whole "*" from +xl-values+
-                                  +xl-whole+ +xl-by-rows+ +xl-previous+)))
-           (right  #p(column #m(find whole "*" from +xl-values+
-                                     +xl-whole+ +xl-by-columns+
-                                     +xl-previous+))))
-    (values
-     (range worksheet left top right bottom)
-     left top right bottom)))|#
 (defun used-range (worksheet)
   (with-used-edges (worksheet left top right bottom)
     (range worksheet left top right bottom)))
@@ -223,14 +210,6 @@
 
 
 ;;; List rows of WORKSHEET where INDEX is VALUE.
-#|(defun filter-rows (worksheet index value)
-  (cclet* ((app (get-excel worksheet)))
-    (excellerate (app)
-      (with-used-edges (worksheet left top right bottom)
-;        (declare (ignore top bottom))
-        (loop for r in (occurances index value)
-              for rr = (+ r 2) collecting
-              #p(value2 (range worksheet left rr right rr)))))))|#
 (defun filter-rows (worksheet index-col values &key (idx-element-type t) (idx-getter #'identity) (test #'equalp))
   (cclet* ((app   (get-excel worksheet))
            (index (index worksheet index-col :element-type idx-element-type :getter idx-getter))
@@ -245,27 +224,27 @@
               collecting #p(value2 (range worksheet left rr right rr)))))))
 
 
+;(defun filter-rows-if (worksheet index-col &optional (predicate #'equalp))
+
+
 ;;; List rows from given FILE/SHEET whose index equals VALUE.
-(defun search-file (values file sheet title &key (element-type t) (getter #'identity))
+(defun search-file (values file sheet title &key (element-type t) (getter #'identity) (header-row 1))
   (cclet* ((wbook   (get-document (namestring file)))
            (wsheets #p(worksheets wbook))
            (wsheet  #p(item wsheets sheet))
-           (column  (title-column wsheet title)))
-#|           (index   (index wsheet
-                           (title-column wsheet title)
-                           :element-type element-type
-                           :getter getter)))|#
+           (column  (title-column wsheet title :header-row header-row)))
     (filter-rows wsheet column values :idx-element-type element-type :idx-getter getter)))
 
 
 ;;; List rows corresponding to VALUE from multiple files.
 (defun search-files (values files &key (sheets '()) (titles '())
-                           (element-type t) (getter #'identity))
+                           (element-type t) (getter #'identity) (header-row 1))
   (apply #'append
          (mapcar #'(lambda (file sheet title)
                      (search-file values file sheet title
                                   :element-type element-type
-                                  :getter getter))
+                                  :getter getter
+                                  :header-row header-row))
                  files sheets titles)))
 
 
@@ -274,7 +253,6 @@
 
 
 (defconstant +wd-find-continue+ 1)
-
 
 ;;; Replace text in Word doc.
 (defun word-replace-text (document orig-text new-text)
@@ -361,7 +339,6 @@
      (let ((index (index wsheet 1 :element-type 'integer
                          :getter #'read-from-string)))
        index)))
-;       (filter-rows wsheet index sztsz))))
 
 
 (defun test3 (values)
@@ -374,7 +351,6 @@
                 :getter #'read-from-string))
 
 
-
 (defun test4 ()
   (cclet* ((wbook   (get-document (namestring (workfile *alap*))))
            (wsheets #p(worksheets wbook))
@@ -382,18 +358,12 @@
     (idx-column wsheet "SZtSz" :from-end t)))
 
 
-
-;(defun filter-rows (worksheet index-col values &key (idx-element-type t) (getter #'identity) (test #'equalp))
-;(index worksheet index-col :element-type idx-element-type :getter getter))
-
 (defun test5 ()
   (cclet* ((wbook   (get-document (namestring (workfile *alap*))))
            (wsheets #p(worksheets wbook))
            (wsheet  #p(item wsheets 1))
            (col-no  (title-column wsheet "sztsz")))
-;    (index wsheet col-no :element-type 'integer :getter #'read-from-string)))
     (filter-rows wsheet col-no '(10049639) :idx-element-type 'integer :idx-getter #'read-from-string)))
-
 
 
 #|
