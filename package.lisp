@@ -23,12 +23,15 @@
            #:autofit-cols
            #:font
            #:apply-style
+           #:title-column
+           #:wsselect
+           #:wsref
            #:column->row
-           #:index
+#|           #:index
            #:title-column
            #:occurances
            #:filter-rows
            #:search-file
-           #:search-files
+           #:search-files|#
            #:word-replace-text
 ))
