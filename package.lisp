@@ -25,7 +25,7 @@
            #:apply-style
            #:title-column
            #:wsselect
-           #:wsref
+;           #:wsref
            #:column->row
 #|           #:index
            #:title-column
@@ -33,5 +33,8 @@
            #:filter-rows
            #:search-file
            #:search-files|#
+           #:last-row
+           #:locate-row
+           #:xcell
            #:word-replace-text
 ))

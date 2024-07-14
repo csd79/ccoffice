@@ -214,7 +214,7 @@
     rsheet))
 
 
-(defun wsref (worksheet column-title row-subscript)
+#|(defun wsref (worksheet column-title row-subscript)
   (let ((column (title-column worksheet column-title)))
     (cond
      ;; ROW-SUBSCRIPT = '("Bérelem" "1000")
@@ -236,7 +236,7 @@
      ((typep row-subscript 'integer)
       #p(value2 (range worksheet column row-subscript)))
      ;; ROW-SUBSCRIPT = something else entirely
-     (t nil))))
+     (t nil))))|#                                  ;                see XCELL instead
 
 
 ;;; Transpose a column (an (n 0) array) into a vector.
@@ -248,6 +248,108 @@
                 (funcall getter
                          (aref array i 0))))
     result))
+
+
+;;; ----------------------------------------------------------------------
+;;; Excel - New stuff
+
+
+(defun last-row (worksheet)
+  (with-used-edges (worksheet left top right bottom)
+    (values bottom right)))
+
+
+#|(defun validate-worksheet-indices (column row)
+  (assert (and (integerp row)
+               (or (integerp column)
+                   (stringp column)))
+      (column row)
+    "Invalid worksheet indices: ~a, ~a" column row)
+  (values column row))|#
+
+
+(defun assert-xcol (column)
+  (assert (or (integerp column)
+              (stringp  column))
+      (column)
+    "Invalid column for worksheet: ~a" column)
+  column)
+
+
+(defun assert-xrow (row)
+  (assert (or (integerp row)
+              (and (listp row)
+                   (= (length row) 2)))
+      (row)
+    "Invalid row for worksheet: ~a" row)
+  row)
+
+
+(defun locate-row (worksheet title value)
+  (let ((column (title-column worksheet title)))
+    (loop for row from 1
+          for v = #p(value2 (range worksheet column row))
+          until (null v)
+          thereis (and (equalp v value)
+                       row))))
+
+
+(defun xcell-core (worksheet column row &optional value)
+  (let* ((col-ok (assert-xcol column))
+         (row-ok (assert-xrow row))
+         (col-ac (if (stringp col-ok)
+                   (title-column worksheet col-ok)
+                   col-ok))
+         (row-ac (if (listp row-ok)
+                   (apply #'locate-row worksheet row-ok)
+                   row-ok)))
+    (if value
+      (setf #p(value2 (range worksheet col-ac row-ac)) value)
+      #p(value2 (range worksheet col-ac row-ac)))))
+
+
+#|(defun xcell (worksheet column row)
+  (multiple-value-bind (column row)
+      (validate-worksheet-indices column row)
+    #p(value2 (range worksheet
+                     (if (stringp column)
+                       (title-column worksheet column)
+                       column)
+                     row))))|#
+
+
+#|(defun xcell (worksheet column row)
+  (multiple-value-bind (column row)
+      (validate-worksheet-indices column row)
+    (xcell-core worksheet column row)))|#
+
+
+(defun xcell (worksheet column row)
+  (xcell-core worksheet column row))
+
+
+#|(defun set-xcell (worksheet column row value)
+  (multiple-value-bind (column row)
+      (validate-worksheet-indices column row)
+    (setf #p(value2 (range worksheet
+                           (if (stringp column)
+                             (title-column worksheet column)
+                             column)
+                           row))
+          value)))|#
+
+
+#|(defun set-xcell (worksheet column row value)
+  (multiple-value-bind (column row)
+      (validate-worksheet-indices column row)
+    (setf (xcell-core worksheet column row) value)))|#
+
+
+(defun set-xcell (worksheet column row value)
+  (xcell-core worksheet column row value))
+
+
+(defsetf xcell set-xcell)
 
 
 ;;; ----------------------------------------------------------------------
@@ -365,4 +467,8 @@
             (wsref selects "Bérelem" 2)
             (wsref selects "Összeg" 2))
     #m(close #p(parent selects) nil)))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 

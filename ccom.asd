@@ -3,7 +3,7 @@
 (defsystem "ccom"
   :description "Wrapper layer for LispWorks 7.1 COM package v2"
   :author      "Denes Cselovszki <denes.cselovszki@gmail.com>"
-  :version     "0.13"
+  :version     "0.14"
   :serial      t
   :components  ((:file "package")
                 (:file "utilities")
