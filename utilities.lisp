@@ -31,6 +31,20 @@
   (format nil "~a~d" (column column) row))
 
 
+;;; Convert Excel column letters (given as keyword symbol) to number.
+(defun letters-column (keyword)
+  (let* ((string     (symbol-name keyword))
+         (length     (length string))
+         (substring  (if (> length 3)
+                       (subseq string (- length 3))
+                       string))
+         (char-codes (loop for c across substring collecting
+                           (- (char-code c) 64)))
+         (char-values (mapcar #'* (nreverse char-codes)
+                              '(1 26 676)))) 
+    (apply #'+ char-values)))
+
+
 ;;; Is COM initialized?
 (defparameter *com-init-count* 0)
 

@@ -106,6 +106,12 @@
     (range worksheet left top right bottom)))
 
 
+;;; Return number of last row (& last column) of WORKSHEET.
+(defun last-row (worksheet)
+  (with-used-edges (worksheet left top right bottom)
+    (values bottom right)))
+
+
 ;;; ----------------------------------------------------------------------
 ;;; Excel cell formatting
 
@@ -180,13 +186,51 @@
               thereis (and (funcall test title v) (1+ i)))))))
 
 
+;;; Create bindings for an Excel workbook with optional method calls
+;;; (open, save at the end, close).
+(defmacro with-workbook ((wbook &key (open-file   nil)
+                                     (wsheets     'wsheets)
+                                     (wsvars      '())
+                                     (app         'excel)
+                                     (excellerate t)
+                                     (close       nil)
+                                     (save        nil))
+                         &body body)
+  (let* ((open-clauses    `((,app     (com:create-object :progid "Excel.Application"))
+                            (wbooks   #p(workbooks ,app))
+                            (,wbook   #m(open wbooks ,open-file))
+                            (,wsheets #p(worksheets ,wbook))))
+        (existing-clauses `((,app     #p(application ,wbook))
+                            (,wsheets #p(worksheets ,wbook))))
+        (init-clauses     (if open-file
+                            open-clauses
+                            existing-clauses))
+        (wsheets-clauses  (loop for n from 1
+                                for var in wsvars collecting
+                                (list var `#p(item ,wsheets ,n))))
+        (body-wrap        (if excellerate
+                            `(excellerate (,app)
+                               ,@body)
+                            `(progn
+                               ,@body))))
+    `(ccom:cclet* ,(append init-clauses wsheets-clauses)
+       (unwind-protect
+           ,body-wrap
+         (progn
+           (when ,save
+             #m(save ,wbook))
+           (when ,close
+             #m(close ,wbook)))))))
+
+
 (defconstant +xl-celltype-visible+ 12)
 (defconstant +xl-paste-values+  -4163)
 
+;;; Select rows from WORKSHEET using AutoFilter,
+;;; copy the results into a new temporary workbook.
 (defun wsselect (worksheet &rest subscripts)
   (format t "wsselect: ws: ~a; subs: ~a~%" worksheet subscripts)
   (cclet* ((cellidx (cell-index 1 1))
-;           (range   #p(range worksheet cellidx))
            (range   (used-range worksheet))
            (excel   #p(application worksheet))
            (wbooks  #p(workbooks excel))
@@ -214,31 +258,6 @@
     rsheet))
 
 
-#|(defun wsref (worksheet column-title row-subscript)
-  (let ((column (title-column worksheet column-title)))
-    (cond
-     ;; ROW-SUBSCRIPT = '("Bérelem" "1000")
-     ((typep row-subscript 'list)
-      (destructuring-bind (row-title row-value)
-          row-subscript
-        (cclet* ((rcol   (title-column worksheet row-title))
-                 (range  #p(range worksheet (cell-index 1 1)))
-                 (result nil))
-          ;; Select row
-          #m(autofilter range rcol row-value)
-          ;; Extract value
-          (setf result #p(value2 (range worksheet column 2)))
-          ;; Deselect row
-          #m(autofilter range)
-          ;; Return value
-          result)))
-     ;; ROW-SUBSCRIPT = a number
-     ((typep row-subscript 'integer)
-      #p(value2 (range worksheet column row-subscript)))
-     ;; ROW-SUBSCRIPT = something else entirely
-     (t nil))))|#                                  ;                see XCELL instead
-
-
 ;;; Transpose a column (an (n 0) array) into a vector.
 (defun column->row (array &key (element-type t) (getter #'identity))
   (let* ((height (array-dimension array 0))
@@ -251,23 +270,10 @@
 
 
 ;;; ----------------------------------------------------------------------
-;;; Excel - New stuff
+;;; Excel cell reference
 
 
-(defun last-row (worksheet)
-  (with-used-edges (worksheet left top right bottom)
-    (values bottom right)))
-
-
-#|(defun validate-worksheet-indices (column row)
-  (assert (and (integerp row)
-               (or (integerp column)
-                   (stringp column)))
-      (column row)
-    "Invalid worksheet indices: ~a, ~a" column row)
-  (values column row))|#
-
-
+#|;;; XCELL column index assertions.
 (defun assert-xcol (column)
   (assert (or (integerp column)
               (stringp  column))
@@ -276,24 +282,71 @@
   column)
 
 
+;;; XCELL row index assertions.
 (defun assert-xrow (row)
   (assert (or (integerp row)
               (and (listp row)
                    (= (length row) 2)))
       (row)
     "Invalid row for worksheet: ~a" row)
-  row)
+  row)|#
 
 
-(defun locate-row (worksheet title value)
+;;; Column designator type and resolution
+(defun column-designator-p (designator)
+  (or (and (integerp designator)
+           (<= 1 designator 16384))
+      (and (keywordp designator)
+           (<= (length (symbol-name designator)) 3))
+      (stringp designator)))
+
+(deftype column-designator ()
+  '(satisfies column-designator-p))
+
+(defun resolve-column-designator (designator &optional worksheet)
+  (assert (typep designator 'column-designator)
+      (designator)
+    "Invalid column designator ~a - should be az integer, a keyword or a string" designator)
+  (typecase designator
+    (integer designator)
+    (keyword (letters-column designator))
+    (string  (title-column worksheet designator))))
+
+  
+;;; Determine row index by search for value in a column.
+(defun locate-row (worksheet title value function)
   (let ((column (title-column worksheet title)))
     (loop for row from 1
           for v = #p(value2 (range worksheet column row))
           until (null v)
-          thereis (and (equalp v value)
+;          thereis (and (equalp v value)
+          thereis (and (funcall function v value)
                        row))))
 
 
+;;; Row designator type and resolution
+(defun row-designator-p (designator)
+  (or (and (integerp designator)
+           (<= 1 designator 1048576))
+      (and (listp designator)
+           (typep (first designator) 'column-designator)
+           (functionp (third designator)))))
+
+(deftype row-designator ()
+  '(satisfies row-designator-p))
+
+(defun resolve-row-designator (designator &optional worksheet)
+  (assert (typep designator 'row-designator)
+      (designator)
+    "Invalid row designator ~a - should be az integer or a list of a column designator, a value and a predicate function" designator)
+  (typecase designator
+    (integer designator)
+    (list    (destructuring-bind (title value function)
+                 designator
+               (locate-row worksheet title value function)))))
+
+
+#|;;; Main body of XCELL and SET-XCELL.
 (defun xcell-core (worksheet column row &optional value)
   (let* ((col-ok (assert-xcol column))
          (row-ok (assert-xrow row))
@@ -305,49 +358,28 @@
                    row-ok)))
     (if value
       (setf #p(value2 (range worksheet col-ac row-ac)) value)
-      #p(value2 (range worksheet col-ac row-ac)))))
+      #p(value2 (range worksheet col-ac row-ac)))))|#
 
 
-#|(defun xcell (worksheet column row)
-  (multiple-value-bind (column row)
-      (validate-worksheet-indices column row)
-    #p(value2 (range worksheet
-                     (if (stringp column)
-                       (title-column worksheet column)
-                       column)
-                     row))))|#
+;;; Main body of XCELL and SET-XCELL.
+(defun xcell-core (worksheet column row &optional value)
+  (let* ((row-mid      (if (and (listp row)
+                                (<= (length row) 2))
+                         (append row (list #'equalp))
+                         row))
+         (row-final    (resolve-row-designator row-mid worksheet))
+         (column-final (resolve-column-designator column worksheet)))
+    (if value
+      (setf #p(value2 (range worksheet column-final row-final)) value)
+      #p(value2 (range worksheet column-final row-final)))))
 
 
-#|(defun xcell (worksheet column row)
-  (multiple-value-bind (column row)
-      (validate-worksheet-indices column row)
-    (xcell-core worksheet column row)))|#
-
-
+;;; Simplified cell reference.
 (defun xcell (worksheet column row)
   (xcell-core worksheet column row))
 
-
-#|(defun set-xcell (worksheet column row value)
-  (multiple-value-bind (column row)
-      (validate-worksheet-indices column row)
-    (setf #p(value2 (range worksheet
-                           (if (stringp column)
-                             (title-column worksheet column)
-                             column)
-                           row))
-          value)))|#
-
-
-#|(defun set-xcell (worksheet column row value)
-  (multiple-value-bind (column row)
-      (validate-worksheet-indices column row)
-    (setf (xcell-core worksheet column row) value)))|#
-
-
 (defun set-xcell (worksheet column row value)
   (xcell-core worksheet column row value))
-
 
 (defsetf xcell set-xcell)
 
@@ -401,74 +433,5 @@
    (pathname
     (concatenate 'string (namestring *root*)
                  (namestring file)))))
-
-
-(defun test2 (&optional (sztsz 10004006))
-   (cclet* ((wbook   (get-document (namestring (workfile *alap*))))
-            (wsheets #p(worksheets wbook))
-            (wsheet  #p(item wsheets 1)))
-     (let ((index (index wsheet 1 :element-type 'integer
-                         :getter #'read-from-string)))
-       index)))
-
-
-(defun test3 (values)
-  (search-files values
-                (list (namestring (workfile *alap*))
-                      (namestring (workfile *rendszeres*)))
-                :sheets '(1 1)
-                :titles '("sztsz" "sztsz")
-                :element-type 'integer
-                :getter #'read-from-string))
-
-
-(defun test4 ()
-  (cclet* ((wbook   (get-document (namestring (workfile *alap*))))
-           (wsheets #p(worksheets wbook))
-           (wsheet  #p(item wsheets 1)))
-    (idx-column wsheet "SZtSz" :from-end t)))
-
-
-(defun test5 ()
-  (cclet* ((wbook   (get-document (namestring (workfile *alap*))))
-           (wsheets #p(worksheets wbook))
-           (wsheet  #p(item wsheets 1))
-           (col-no  (title-column wsheet "sztsz")))
-    (filter-rows wsheet col-no '(10049639) :idx-element-type 'integer :idx-getter #'read-from-string)))
-
-
-(defun test6 ()
-  (cclet* ((file    (workfile *alap*))
-           (excel   (com:create-object :progid "Excel.Application"))
-           (wbooks  #p(workbooks excel))
-           (wbook   #m(open wbooks (namestring file)))
-           (wsheets #p(worksheets wbook))
-           (wsheet  #p(item wsheets 1))
-           (selects (wsselect wsheet
-                              '("SZTSZ" "10049639")
-;                              '("Bérelem" "1000")
-                              )))
-    (format t "Bérelem: 1000;   Összeg: ~a~%"
-            (wsref selects "Összeg" '("Bérelem" "1000")))
-;    #m(saveas #p(parent selects) (concatenate 'string *root* "ok.xlsx"))
-;    #m(close wbook)
-;    #m(close #p(parent selects))
-    ))
-
-
-(defun test7 ()
-  (cclet* ((wbook   (get-document (namestring (workfile *alap*))))
-           (wsheets #p(worksheets wbook))
-           (wsheet  #p(item wsheets 1))
-           (selects (wsselect wsheet '("SZTSZ" "10049639"))))
-    (format t "Bérelem: 1000;   Összeg: ~a~%~%"
-            (wsref selects "Összeg" '("Bérelem" "1000")))
-    (format t "Bérelem: ~a;   Összeg: ~a~%"
-            (wsref selects "Bérelem" 2)
-            (wsref selects "Összeg" 2))
-    #m(close #p(parent selects) nil)))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 

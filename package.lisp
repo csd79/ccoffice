@@ -11,6 +11,7 @@
            #:cclet*
            #:column
            #:cell-index
+           #:letters-column
            #:with-com-initialized
            #:get-excel
            #:excellerate
@@ -19,22 +20,22 @@
            #:range
            #:with-used-edges
            #:used-range
+           #:last-row
            #:copy-formatting
            #:autofit-cols
            #:font
            #:apply-style
            #:title-column
+           #:with-workbook
            #:wsselect
-;           #:wsref
            #:column->row
-#|           #:index
-           #:title-column
-           #:occurances
-           #:filter-rows
-           #:search-file
-           #:search-files|#
-           #:last-row
+           #:column-designator-p
+           #:column-designator
+           #:resolve-column-designator
            #:locate-row
+           #:row-designator-p
+           #:row-designator
+           #:resolve-row-designator
            #:xcell
            #:word-replace-text
 ))
