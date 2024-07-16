@@ -37,5 +37,9 @@
            #:row-designator
            #:resolve-row-designator
            #:xcell
+           #:*xrange-default-value*
+           #:*xrange-target-too-small*
+           #:*xrange-target-too-large*
+           #:xrange
            #:word-replace-text
 ))

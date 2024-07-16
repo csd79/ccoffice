@@ -1,1 +1,3 @@
 Compiling long CCLET* expressions takes exponentially longer. EVAL-WHEN might be not right.
+
+LOCATE-ROW: extract whole column into array and search that.

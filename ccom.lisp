@@ -26,7 +26,7 @@
 ;;; Execute BODY using faster Excel interaction.
 (defmacro excellerate ((excel) &body body)
   `(unwind-protect 
-       (progn 
+       (progn
          (setf #p(screenupdating ,excel) nil
                #p(displayalerts ,excel)  nil)
          (when #p(visible ,excel)
@@ -133,7 +133,7 @@
 ;;; Set auto width for all columns.
 (defun autofit-cols (worksheet)
   (cclet* ((range #p(columns worksheet)))
-    #m(auto-fit range)))
+    #m(autofit range)))
 
 
 ;;; Target range for font formatting.
@@ -223,13 +223,15 @@
              #m(close ,wbook)))))))
 
 
-(defconstant +xl-celltype-visible+ 12)
-(defconstant +xl-paste-values+  -4163)
+(defconstant +xl-celltype-visible+   12)
+(defconstant +xl-paste-values+    -4163)
+(defconstant +xl-paste-all+       -4104)
+(defconstant +xl-paste-column-widths+ 8)
 
 ;;; Select rows from WORKSHEET using AutoFilter,
 ;;; copy the results into a new temporary workbook.
-(defun wsselect (worksheet &rest subscripts)
-  (format t "wsselect: ws: ~a; subs: ~a~%" worksheet subscripts)
+(defun wsselect (worksheet subscripts &key (paste-all nil) (paste-column-widths nil))
+;  (format t "wsselect: ws: ~a; subs: ~a~%" worksheet subscripts)
   (cclet* ((cellidx (cell-index 1 1))
            (range   (used-range worksheet))
            (excel   #p(application worksheet))
@@ -242,14 +244,18 @@
     (dolist (subscript subscripts)
       (destructuring-bind (title value)
           subscript
-        (format t "wsselect: type of val: ~a~%" (type-of value))
-        (format t "wsselect: titlecol: ~a~%" (title-column worksheet title))
+;        (format t "wsselect: type of val: ~a~%" (type-of value))
+;        (format t "wsselect: titlecol: ~a~%" (title-column worksheet title))
         #m(autofilter range
                       (title-column worksheet title)
                       value)))
     ;; Copy selected data to new worksheet
     #m(copy #m(specialcells range +xl-celltype-visible+))
-    #m(pastespecial rrange +xl-paste-values+)
+    (when paste-column-widths
+      #m(pastespecial rrange +xl-paste-column-widths+))
+    (if paste-all
+      #m(pastespecial rrange +xl-paste-all+)
+      #m(pastespecial rrange +xl-paste-values+))
     ;; Turn autofilter off
     #m(autofilter range)
     ;; Return worksheet containing results
@@ -271,25 +277,6 @@
 
 ;;; ----------------------------------------------------------------------
 ;;; Excel cell reference
-
-
-#|;;; XCELL column index assertions.
-(defun assert-xcol (column)
-  (assert (or (integerp column)
-              (stringp  column))
-      (column)
-    "Invalid column for worksheet: ~a" column)
-  column)
-
-
-;;; XCELL row index assertions.
-(defun assert-xrow (row)
-  (assert (or (integerp row)
-              (and (listp row)
-                   (= (length row) 2)))
-      (row)
-    "Invalid row for worksheet: ~a" row)
-  row)|#
 
 
 ;;; Column designator type and resolution
@@ -330,7 +317,9 @@
            (<= 1 designator 1048576))
       (and (listp designator)
            (typep (first designator) 'column-designator)
-           (functionp (third designator)))))
+           (if (third designator)
+             (functionp (third designator))
+             t))))
 
 (deftype row-designator ()
   '(satisfies row-designator-p))
@@ -341,35 +330,16 @@
     "Invalid row designator ~a - should be az integer or a list of a column designator, a value and a predicate function" designator)
   (typecase designator
     (integer designator)
-    (list    (destructuring-bind (title value function)
+    (list    (destructuring-bind (title value &optional (function #'equalp))
                  designator
                (locate-row worksheet title value function)))))
 
 
-#|;;; Main body of XCELL and SET-XCELL.
-(defun xcell-core (worksheet column row &optional value)
-  (let* ((col-ok (assert-xcol column))
-         (row-ok (assert-xrow row))
-         (col-ac (if (stringp col-ok)
-                   (title-column worksheet col-ok)
-                   col-ok))
-         (row-ac (if (listp row-ok)
-                   (apply #'locate-row worksheet row-ok)
-                   row-ok)))
-    (if value
-      (setf #p(value2 (range worksheet col-ac row-ac)) value)
-      #p(value2 (range worksheet col-ac row-ac)))))|#
-
-
 ;;; Main body of XCELL and SET-XCELL.
-(defun xcell-core (worksheet column row &optional value)
-  (let* ((row-mid      (if (and (listp row)
-                                (<= (length row) 2))
-                         (append row (list #'equalp))
-                         row))
-         (row-final    (resolve-row-designator row-mid worksheet))
-         (column-final (resolve-column-designator column worksheet)))
-    (if value
+(defun xcell-core (worksheet column row &optional (value nil value-supplied-p))
+  (let ((row-final    (resolve-row-designator row worksheet))
+        (column-final (resolve-column-designator column worksheet)))
+    (if value-supplied-p
       (setf #p(value2 (range worksheet column-final row-final)) value)
       #p(value2 (range worksheet column-final row-final)))))
 
@@ -382,6 +352,141 @@
   (xcell-core worksheet column row value))
 
 (defsetf xcell set-xcell)
+
+
+;;; ----------------------------------------------------------------------
+;;; Excel range reference
+
+
+;;; Types for possible values to assign to a range
+(defun 2d-array-column-p (value)
+  (and (arrayp value)
+       (= (length (array-dimensions value)) 2)
+       (= (array-dimension value 1) 1)))
+
+(deftype 2d-array-column ()
+  '(satisfies 2d-array-column-p))
+
+
+(defun 2d-array-row-p (value)
+  (and (arrayp value)
+       (= (length (array-dimensions value)) 2)
+       (= (array-dimension value 0) 1)))
+
+(deftype 2d-array-row ()
+  '(satisfies 2d-array-row-p))
+
+
+(defun 2d-array-p (value)
+  (and (arrayp value)
+       (= (length (array-dimensions value)) 2)
+       (> (array-dimension value 0) 1)
+       (> (array-dimension value 1) 1)))
+
+(deftype 2d-array ()
+  '(satisfies 2d-array-p))
+
+
+(defparameter *xrange-default-value*    "")             ; used when *XRANGE-TARGET-TOO-LARGE* = :FULFILL
+(defparameter *xrange-target-too-small* :fill-to-limit) ; :ERROR  :FILL-TO-LIMIT
+(defparameter *xrange-target-too-large* :restrict)      ; :ERROR  :FULFILL  :RESTRICT
+
+;;; Multiple cell range assignment.
+(defun set-xrange-worker (worksheet c1 r1 c2 r2 value)
+  (let ((range-width  (1+ (abs (- c1 c2))))
+        (range-height (1+ (abs (- r1 r2))))
+        (value-width  (array-dimension value 1))
+        (value-height (array-dimension value 0)))
+    ;; If target range size and value size is not equal and either control variables are set to :ERROR
+    (when (and (or (/= range-width  value-width)
+                   (/= range-height value-height))
+               (or (eq *xrange-target-too-small* :error)
+                   (eq *xrange-target-too-large* :error)))
+      (error "Cannot fit column ~a into range ~a,~a - ~a,~a." value c1 r1 c2 r2))
+    ;; Resize target area according to VALUE size.
+    (let ((c2r (if (= value-width 1)
+                 c2
+                 (min c2 (1- (+ c1 value-width)))))
+          (r2r (if (= value-height 1)
+                 r2
+                 (min r2 (1- (+ r1 value-height))))))
+      ;; Assign VALUE to a downsized target range.
+      (setf #p(value2 (range worksheet c1 r1 c2r r2r)) value)
+      ;; Add fill when needed
+      (when (eq *xrange-target-too-large* :fulfill)
+        (let ((rightp (and (not (2d-array-column-p value))
+                           (> range-width value-width)))
+              (lowerp (and (not (2d-array-row-p value))
+                           (> range-height value-height))))
+          ;; Right side fill
+          (when rightp
+            (setf #p(value2 (range worksheet (1+ c2r) r1 c2 r2r))
+                  *xrange-default-value*))
+          ;; Lower fill
+          (when lowerp
+            (setf #p(value2 (range worksheet c1 (1+ r2r) c2r r2))
+                  *xrange-default-value*))
+          ;; Lower right fill
+          (when (and rightp lowerp)
+            (setf #p(value2 (range worksheet (1+ c2r) (1+ r2r) c2 r2))
+                  *xrange-default-value*)))))))
+
+
+;;; Prefilter arg combinations that yield simple assignment or no assignment.
+(defun precide-xrange (worksheet c1 r1 c2 r2 value)
+  ;; Prevent invalid keywords in control vars.
+  (when (not (member *xrange-target-too-small* '(:error :fill-to-limit)))
+    (error "Unknown keyword: ~a." *xrange-target-too-small*))
+  (when (not (member *xrange-target-too-large* '(:error :fulfill :restrict)))
+    (error "Unknown keyword: ~a." *xrange-target-too-large*))
+  (cond
+   ;; Target is a single cell.
+   ((and (= c1 c2)
+         (= r1 r2))
+    (if (atom value)
+      (setf (xcell worksheet c1 r1) value)
+      (error "Cannot assign ~a to a single cell." value)))
+   ;; Value is an atom, will be assigned to every cell in range.
+   ((and (atom value)
+         (not (arrayp value)))
+    (setf #p(value2 (range worksheet c1 r1 c2 r2)) value))
+   ;; Value is a list or a vector: convert value to a 2D array row.
+   ((or (listp   value)
+        (vectorp value))
+    (precide-xrange
+     worksheet c1 r1 c2 r2
+     (make-array (list 1 (length value))
+                 :initial-contents (list (coerce value 'list)))))
+   ;; Range is a column but value is not: error.
+   ((and (= c1 c2)
+         (not (2d-array-column-p value)))
+    (error "Cannot assign ~a to a column of cells." value))
+   ;; Range is a row but value is not: error.
+   ((and (= r1 r2)
+         (or (2d-array-column-p value) (2d-array-p value)))
+    (error "Cannot assign ~a to a row of cells." value))
+   ;; Otherwise, set range to values in collection.
+   (t (set-xrange-worker worksheet c1 r1 c2 r2 value))))
+
+;;; Main body of XCELL and SET-XCELL.
+(defun xrange-core (worksheet c1 r1 c2 r2 &optional (value nil value-supplied-p))
+  (let ((c1final (resolve-column-designator c1 worksheet))
+        (c2final (resolve-column-designator c2 worksheet))
+        (r1final (resolve-row-designator r1 worksheet))
+        (r2final (resolve-row-designator r2 worksheet)))
+    (if value-supplied-p
+      (precide-xrange worksheet c1final r1final c2final r2final value)
+      #p(value2 (range worksheet c1final r1final c2final r2final)))))
+
+
+;;; Simplified cell reference.
+(defun xrange (worksheet c1 r1 c2 r2)
+  (xrange-core worksheet c1 r1 c2 r2))
+
+(defun set-xrange (worksheet c1 r1 c2 r2 value)
+  (xrange-core worksheet c1 r1 c2 r2 value))
+
+(defsetf xrange set-xrange)
 
 
 ;;; ----------------------------------------------------------------------
