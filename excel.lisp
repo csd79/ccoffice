@@ -5,7 +5,7 @@
 
 
 ;;; ----------------------------------------------------------------------
-;;; Excel workbooks, worksheets
+;;; Workbooks, worksheets
 
 
 ;;; Get Excell app.
@@ -65,8 +65,25 @@
     (nreverse results)))
 
 
+(defun unfreeze-panes (worksheet)
+  (cclet* ((wbook   #p(parent worksheet))
+           (windows #p(windows wbook))
+           (window  #p(item windows 1)))
+    (setf #p(freezepanes window) nil)))
+
+(defun freeze-panes (worksheet column row)
+  (cclet* ((wbook   #p(parent worksheet))
+           (windows #p(windows wbook))
+           (window  #p(item windows 1)))
+    (when #p(freezepanes window)
+      (setf #p(freezepanes window) nil))
+    (setf #p(splitcolumn window) column
+          #p(splitrow window) row
+          #p(freezepanes window) t)))
+
+
 ;;; ----------------------------------------------------------------------
-;;; Excel ranges, values
+;;; Ranges, values
 
 
 ;; Create range object within given 'coordinates'.
@@ -113,7 +130,7 @@
 
 
 ;;; ----------------------------------------------------------------------
-;;; Excel cell formatting
+;;; Cell formatting
 
 
 ;;; Constants used to copy cell formatting.
@@ -166,7 +183,7 @@
 
 
 ;;; ----------------------------------------------------------------------
-;;; Excel indexing & searching basics
+;;; Indexing & searching basics
 
 
 (defparameter *header-row* 1)
@@ -189,6 +206,8 @@
 ;;; Create bindings for an Excel workbook with optional method calls
 ;;; (open, save at the end, close).
 (defmacro with-workbook ((wbook &key (open-file   nil)
+                                     (read-only   nil)
+                                     (new         nil)
                                      (wsheets     'wsheets)
                                      (wsvars      '())
                                      (app         'excel)
@@ -198,16 +217,22 @@
                          &body body)
   (let* ((open-clauses    `((,app     (com:create-object :progid "Excel.Application"))
                             (wbooks   #p(workbooks ,app))
-                            (,wbook   #m(open wbooks ,open-file))
+                            (,wbook   #m(open wbooks ,open-file nil ,read-only))
                             (,wsheets #p(worksheets ,wbook))))
         (existing-clauses `((,app     #p(application ,wbook))
                             (,wsheets #p(worksheets ,wbook))))
-        (init-clauses     (if open-file
-                            open-clauses
-                            existing-clauses))
+        (new-clauses      `((,app     (com:create-object :progid "Excel.Application"))
+                            (wbooks   #p(workbooks ,app))
+                            (,wbook   #m(add wbooks))
+                            (,wsheets #p(worksheets ,wbook))))
+        (init-clauses     (if new
+                            new-clauses
+                            (if open-file
+                              open-clauses
+                              existing-clauses)))
         (wsheets-clauses  (loop for n from 1
                                 for var in wsvars collecting
-                                (list var `#p(item ,wsheets ,n))))
+                                (list var `#p(item ,wsheets ,n))));;;;;; only collect if var <> NIL
         (body-wrap        (if excellerate
                             `(excellerate (,app)
                                ,@body)
@@ -217,18 +242,22 @@
        (unwind-protect
            ,body-wrap
          (progn
-           (when ,save
+           (when (and ,save (not ,read-only))
              #m(save ,wbook))
            (when ,close
-             #m(close ,wbook)))))))
+             (setf #p(saved ,wbook) t)
+             #m(close ,wbook)
+             #m(quit ,app)))))))
 
 
 (defconstant +xl-celltype-visible+   12)
 (defconstant +xl-paste-values+    -4163)
 (defconstant +xl-paste-all+       -4104)
 (defconstant +xl-paste-column-widths+ 8)
+(defconstant +and+                    1)
+(defconstant +or+                     2)
 
-;;; Select rows from WORKSHEET using AutoFilter,
+#|;;; Select rows from WORKSHEET using AutoFilter,
 ;;; copy the results into a new temporary workbook.
 (defun wsselect (worksheet subscripts &key (paste-all nil) (paste-column-widths nil))
 ;  (format t "wsselect: ws: ~a; subs: ~a~%" worksheet subscripts)
@@ -242,13 +271,52 @@
            (rrange  #p(range rsheet cellidx)))
     ;; Filter source range
     (dolist (subscript subscripts)
-      (destructuring-bind (title value)
+      (destructuring-bind (title &rest values)
           subscript
 ;        (format t "wsselect: type of val: ~a~%" (type-of value))
 ;        (format t "wsselect: titlecol: ~a~%" (title-column worksheet title))
-        #m(autofilter range
-                      (title-column worksheet title)
-                      value)))
+        (if (= (length values) 1)
+          #m(autofilter range
+                        (title-column worksheet title)
+                        (first values))
+          #m(autofilter range
+                        (title-column worksheet title)
+                        (first values) 2 (second values)))))
+    ;; Copy selected data to new worksheet
+    #m(copy #m(specialcells range +xl-celltype-visible+))
+    (when paste-column-widths
+      #m(pastespecial rrange +xl-paste-column-widths+))
+    (if paste-all
+      #m(pastespecial rrange +xl-paste-all+)
+      #m(pastespecial rrange +xl-paste-values+))
+    ;; Turn autofilter off
+    #m(autofilter range)
+    ;; Return worksheet containing results
+    (setf #p(saved #p(parent worksheet)) t
+          #p(saved rbook) t)
+    rsheet))|#
+
+
+;;; Select rows from WORKSHEET using AutoFilter,
+;;; copy the results into a new temporary workbook.
+;;;     (xselect> ws `(("TK" "Eger" +or+ "Baja") ("SZTSZ" ">5" +and+ "<999999")))
+(defun xselect> (worksheet subscripts &key (paste-all nil) (paste-column-widths nil))
+  (cclet* ((cellidx (cell-index 1 1))
+           (range   (used-range worksheet))
+           (topleft (range worksheet 1 1))
+           (excel   #p(application worksheet))
+           (wbooks  #p(workbooks excel))
+           (rbook   #m(add wbooks))
+           (rsheets #p(worksheets rbook))
+           (rsheet  #p(item rsheets 1))
+           (rrange  #p(range rsheet cellidx))
+           (corsubs (mapcar #'(lambda (sub)
+                                (append (list (resolve-column-designator (first sub) worksheet))
+                                        (rest sub)))
+                            subscripts)))
+    ;; Apply filters.
+    (dolist (subscript corsubs)
+      (apply #'com::invoke-dispatch-method topleft "autofilter" subscript))
     ;; Copy selected data to new worksheet
     #m(copy #m(specialcells range +xl-celltype-visible+))
     (when paste-column-widths
@@ -276,7 +344,7 @@
 
 
 ;;; ----------------------------------------------------------------------
-;;; Excel cell reference
+;;; Cell reference
 
 
 ;;; Column designator type and resolution
@@ -354,8 +422,18 @@
 (defsetf xcell set-xcell)
 
 
+(defun excel-value-as-number (value)
+  (let ((not-string (if (stringp value)
+                      (read-from-string value)
+                      value)))
+    (assert (numberp not-string)
+        (not-string)
+      "Value ~a is not readable as number." not-string)
+    not-string))
+
+
 ;;; ----------------------------------------------------------------------
-;;; Excel range reference
+;;; Range reference
 
 
 ;;; Types for possible values to assign to a range
@@ -490,53 +568,30 @@
 
 
 ;;; ----------------------------------------------------------------------
-;;; Word
+;;; Dates
 
 
-(defconstant +wd-find-continue+ 1)
-
-;;; Replace text in Word doc.
-(defun word-replace-text (document orig-text new-text)
-  (cclet* ((find #p(find #p(content document))))
-    #m(execute find orig-text nil nil nil nil nil t
-               +wd-find-continue+ nil new-text)))
-
-
-;;; ----------------------------------------------------------------------
-;;; Sandbox
-
-
-(defun test1 ()
-  (cclet* ((file    "c:\\Users\\cselovszkid\\Desktop\\lisp-book-structure-comparison.xlsx")
-           (wbook   (get-document file))
-           (wsheets #p(worksheets wbook))
-           (wsheet  #p(item wsheets 1))
-           (source  (range wsheet 1 1 1 5))
-           (dest    (range wsheet 3 1 3 5))
-           (write   (range wsheet 1 100 1 105))
-           (used    (used-range wsheet))
-           (app     (get-excel wbook)))
-    (excellerate (app)
-      ;; Copy formatting.
-      (copy-formatting source dest)
-      ;; Set values.
-      (setf #p(value2 write) "Grr")
-      ;; Read values.
-      #p(value2 used)
-      ;; Add borders.
-      (apply-style (range wsheet 1 9 1 14) '(:border))
-      ;; Bold text.
-      (apply-style (font (range wsheet 1 11 1 14)) '(:bold)))))
+;;; Convert Excel date value to a list of year, month and day.
+(defun excel-date (n)
+  (let* ((a    (+ n 2483588))
+         (b    (truncate (/ (* a 4) 146097)))
+         (c    (- a (truncate (/ (+ (* 146097 b) 3) 4))))
+         (d    (truncate (/ (* 4000 (+ c 1)) 1461001)))
+         (e    (+ (- c (+ (truncate (/ (* 1461 d) 4)))) 31))
+         (f    (truncate (/ (* 80 e) 2447)))
+         (day  (- e (truncate (/ (* 2447 f) 80))))
+         (g    (truncate (/ f 11)))
+         (mon  (- (+ f 2) (* 12 g)))
+         (year (+ (* 100 (- b 49)) d g)))
+    (list year mon day)))
 
 
-(defparameter *root* "c:\\Users\\cselovszkid\\Downloads\\2024.06.27. Újabb kinevezések elõkészület\\Lekérdezés\\")
-(defparameter *alap* "B8_0008IT_20240701.XLSX")
-(defparameter *rendszeres* "B8_0014IT_20240701.XLSX")
-
-(defun workfile (file)
-  (probe-file
-   (pathname
-    (concatenate 'string (namestring *root*)
-                 (namestring file)))))
-
-
+;;; Convert Excel date value to a hu formated string.
+(defun excel-date-string (n &key (words nil))
+  (destructuring-bind (year mon day)
+      (excel-date (truncate n))
+    (if words
+      (let ((months '("január" "február" "március" "április" "május" "június" "július"
+                      "augusztus" "szeptember" "október" "november" "december")))
+        (format nil "~4d. ~a ~d." year (nth (1- mon) months) day))
+    (format nil "~4d.~2,'0d.~2,'0d." year mon day))))

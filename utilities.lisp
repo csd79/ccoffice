@@ -61,3 +61,22 @@
        (decf *com-init-count*)
        (when (zerop *com-init-count*)
          (com::co-uninitialize)))))
+
+
+;;; Construct new pathname based on DIRECTORY and FILE.
+(defun file-in-dir (directory file &key (namestring nil))
+  (let* ((filename (pathname-name file))
+         (filetype (pathname-type file))
+         (new      (make-pathname :name filename :type filetype
+                                  :defaults directory)))
+    (if namestring
+      (namestring new)
+      new)))
+
+
+;;; ...
+(defmacro flitmp (&body body)
+  `(progn
+     (fli:start-collecting-template-info)
+     ,@body
+     (fli:print-collected-template-info)))
