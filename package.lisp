@@ -15,6 +15,8 @@
            #:with-com-initialized
            #:file-in-dir
            #:flitmp
+           #:new-app-instance
+           #:kill-running-instances
            #:get-excel
            #:excellerate
            #:get-document
@@ -31,8 +33,9 @@
            #:apply-style
            #:title-column
            #:with-workbook
-;           #:wsselect
            #:xselect>
+           #:close-workbook
+           #:with-xselection
            #:column->row
            #:column-designator-p
            #:column-designator
@@ -49,6 +52,12 @@
            #:xrange
            #:excel-date
            #:excel-date-string
+           #:+wd-section-break-next-page+
+           #:+wd-format-document-default+
+           #:+wd-header-footer-first-page+
+           #:+wd-header-footer-primary+
+           #:+wd-align-page-number-center+
+           #:+wd-find-continue+
            #:with-document
            #:begining-of-doc
            #:end-of-doc
@@ -56,7 +65,5 @@
            #:selection-overwrite
            #:footer
            #:header
-;           #:word-replace-text
            #:carriage-return
-;           #:word-replace1st
 ))

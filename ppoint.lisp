@@ -8,7 +8,7 @@
 ;;; ...
 
 
-;;; Pedagógusok létszáma vármegyénként 2024.05.31.
+#|;;; Pedagógusok létszáma vármegyénként 2024.05.31.
 (defparameter *ppt-template* "c:\\Users\\cselovszkid\\Downloads\\2024.07.09\\sablon.pptx")
 (defparameter *ppt-control*  "c:\\Users\\cselovszkid\\Downloads\\2024.07.09\\Létszámadatok_köznevelési intézmények_2024.05.31._WIP.xlsx")
 
@@ -21,7 +21,8 @@
 (defun test9 ()
   (let* ((input-files (directory (concatenate 'string *input-directory* "*.xls*")))
          (input-files-sorted (sort input-files #'string< :key #'namestring)))
-    (cclet* ((excel    (com:create-object :progid "Excel.Application"))
+;    (cclet* ((excel    (com:create-object :progid "Excel.Application"))
+    (cclet* ((excel    (new-app-instance "Excel.Application"))
              (wbooks   #p(workbooks excel))
              (wbook    #m(add wbooks))
              (wsheets  #p(worksheets wbook))
@@ -59,4 +60,4 @@
             #m(saveas wbook (concatenate 'string (namestring *input-directory*) "hihi.xlsx")))
         (progn
           #m(close wbook)
-          #m(quit excel))))))
+          #m(quit excel))))))|#

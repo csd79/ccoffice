@@ -4,6 +4,14 @@
 (in-package #:ccom)
 
 
+(defconstant +wd-section-break-next-page+  2)
+(defconstant +wd-format-document-default+ 16)
+(defconstant +wd-header-footer-first-page+ 2)
+(defconstant +wd-header-footer-primary+    1)
+(defconstant +wd-align-page-number-center+ 1)
+(defconstant +wd-find-continue+            1)
+
+
 ;;; ----------------------------------------------------------------------
 ;;; Documents
 
@@ -16,23 +24,27 @@
                                    (close     t)
                                    (save      nil))
                          &body body)
-    `(ccom:cclet* ((,app (com:create-object :progid "Word.Application"))
-                   (docs #p(documents ,app))
-                   (,doc (if ,open-file
-                           #m(open docs ,open-file nil ,read-only)
-                           #m(add docs))))
-       (unwind-protect
+  (let ((app2 (gensym)))
+    `(cclet* ((,app2 (if (boundp ',app)
+                       ,app
+                       (com:create-object :progid "Word.Application")))
+              (docs  #p(documents ,app2))
+              (,doc  (if ,open-file
+                       #m(open docs ,open-file nil ,read-only)
+                       #m(add docs))))
+       (unwind-protect 
            (progn
-             (setf #p(screenupdating ,app) nil)
+             (setf #p(screenupdating ,app2) nil)
              ,@body)
-         (progn
-           (setf #p(screenupdating ,app) t)
+         (progn 
+           (setf #p(screenupdating ,app2) t)
            (when (and ,save (not ,read-only))
              #m(save ,doc))
            (when ,close
              (setf #p(saved ,doc) t)
              #m(close ,doc)
-             #m(quit ,app))))))
+             (unless (boundp ',app)
+               #m(quit ,app2))))))))
 
 
 (defun begining-of-doc (document)
@@ -46,8 +58,6 @@
 ;;; ----------------------------------------------------------------------
 ;;; Text mangling
 
-
-(defconstant +wd-find-continue+ 1)
 
 (defun trim-text (text)
   (if (> (length text) 250)
@@ -64,12 +74,27 @@
       #p(start range))))
   
 
+(defun carriage-return (string)
+  (let ((position (search "^M" string :test #'string=)))
+    (if position
+      (carriage-return (concatenate 'string
+                                    (subseq string 0 position)
+                                    (string #\return)
+                                    (subseq string (+ position 2))))
+      string)))
+
+
 (defun selection-overwrite (range start end text)
   #m(select range)
   (cclet* ((document  #p(document range))
-           (selection #p(selection #p(activewindow document))))
+           (selection #p(selection #p(activewindow document)))
+           (text2     (if (string= text "")
+                        " "
+                        text)))
     #m(setrange selection start end)
-    #m(typetext selection text)))
+    #m(typetext selection (carriage-return text2))
+    (when (string/= text text2)
+      #m(typebackspace selection))))
 
 
 (defun footer (document section type)
@@ -113,14 +138,6 @@
 
 ;(defparameter *cr* (format nil "~C" #\Return))
 
-(defun carriage-return (string)
-  (let ((position (search "^M" string :test #'string=)))
-    (if position
-      (carriage-return (concatenate 'string
-                                    (subseq string 0 position)
-                                    (string #\return)
-                                    (subseq string (+ position 2))))
-      string)))
 
 
 #|(defun word-replace1st (document old-text new-text

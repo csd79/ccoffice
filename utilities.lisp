@@ -51,16 +51,18 @@
 
 ;;; Binding context for COM operations.
 (defmacro with-com-initialized (&body body)
-  `(unwind-protect
+  `(let ((orig *com-init-count*))
+     (unwind-protect
+         (progn 
+           (when (zerop *com-init-count*)
+             (com::co-initialize))
+           (incf *com-init-count*)
+           ,@body)
        (progn
+         (setf *com-init-count* orig)
+;       (decf *com-init-count*)
          (when (zerop *com-init-count*)
-           (com::co-initialize))
-         (incf *com-init-count*)
-         ,@body)
-     (progn
-       (decf *com-init-count*)
-       (when (zerop *com-init-count*)
-         (com::co-uninitialize)))))
+           (com::co-uninitialize))))))
 
 
 ;;; Construct new pathname based on DIRECTORY and FILE.

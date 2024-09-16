@@ -192,8 +192,7 @@
 (defun title-column (worksheet title &key (key #'identity) (header-row *header-row*) (test #'equalp)
                          (from-end nil) (start nil) (end nil))
   (with-used-edges (worksheet left top right bottom)
-;    (declare (ignore top bottom))
-    (cclet* ((header #p(value2 (range worksheet left header-row right header-row))))
+    (let ((header #p(value2 (range worksheet left header-row right header-row))))
       (if from-end
         (loop for i from (1- (or end right)) downto (1- (or start left))
               for v = (funcall key (aref header 0 i))
@@ -205,49 +204,40 @@
 
 ;;; Create bindings for an Excel workbook with optional method calls
 ;;; (open, save at the end, close).
-(defmacro with-workbook ((wbook &key (open-file   nil)
-                                     (read-only   nil)
-                                     (new         nil)
-                                     (wsheets     'wsheets)
-                                     (wsvars      '())
-                                     (app         'excel)
-                                     (excellerate t)
-                                     (close       nil)
-                                     (save        nil))
+(defmacro with-workbook ((&key (wbook     'wbook)
+                               (open-file nil)
+                               (app       nil)
+                               (read-only nil)
+                               (wsheets   'wsheets)
+                               (wsvars    '())
+                               (close     t)
+                               (save      nil))
                          &body body)
-  (let* ((open-clauses    `((,app     (com:create-object :progid "Excel.Application"))
-                            (wbooks   #p(workbooks ,app))
-                            (,wbook   #m(open wbooks ,open-file nil ,read-only))
-                            (,wsheets #p(worksheets ,wbook))))
-        (existing-clauses `((,app     #p(application ,wbook))
-                            (,wsheets #p(worksheets ,wbook))))
-        (new-clauses      `((,app     (com:create-object :progid "Excel.Application"))
-                            (wbooks   #p(workbooks ,app))
-                            (,wbook   #m(add wbooks))
-                            (,wsheets #p(worksheets ,wbook))))
-        (init-clauses     (if new
-                            new-clauses
-                            (if open-file
-                              open-clauses
-                              existing-clauses)))
-        (wsheets-clauses  (loop for n from 1
-                                for var in wsvars collecting
-                                (list var `#p(item ,wsheets ,n))));;;;;; only collect if var <> NIL
-        (body-wrap        (if excellerate
-                            `(excellerate (,app)
-                               ,@body)
-                            `(progn
-                               ,@body))))
-    `(ccom:cclet* ,(append init-clauses wsheets-clauses)
+  (let ((app2            (gensym))
+        (wsheets-clauses (loop for n from 1
+                               for var in wsvars collecting
+                               (list var `#p(item ,wsheets ,n)))))
+    `(cclet* ((,app2    (if ,app
+                               ,app
+                               (com:create-object :progid "Excel.Application")))
+                   (wbooks   #p(workbooks ,app2))
+                   (,wbook   (if ,open-file
+                               #m(open wbooks ,open-file nil ,read-only)
+                               #m(add wbooks)))
+                   (,wsheets #p(worksheets ,wbook))
+                   ,@wsheets-clauses)
        (unwind-protect
-           ,body-wrap
-         (progn
+           (excellerate (,app2)
+             ,@body)
+         (progn 
            (when (and ,save (not ,read-only))
              #m(save ,wbook))
            (when ,close
              (setf #p(saved ,wbook) t)
+             (setf #p(displayalerts ,app2) nil)
              #m(close ,wbook)
-             #m(quit ,app)))))))
+             (unless ,app
+               #m(quit ,app2))))))))
 
 
 (defconstant +xl-celltype-visible+   12)
@@ -256,46 +246,6 @@
 (defconstant +xl-paste-column-widths+ 8)
 (defconstant +and+                    1)
 (defconstant +or+                     2)
-
-#|;;; Select rows from WORKSHEET using AutoFilter,
-;;; copy the results into a new temporary workbook.
-(defun wsselect (worksheet subscripts &key (paste-all nil) (paste-column-widths nil))
-;  (format t "wsselect: ws: ~a; subs: ~a~%" worksheet subscripts)
-  (cclet* ((cellidx (cell-index 1 1))
-           (range   (used-range worksheet))
-           (excel   #p(application worksheet))
-           (wbooks  #p(workbooks excel))
-           (rbook   #m(add wbooks))
-           (rsheets #p(worksheets rbook))
-           (rsheet  #p(item rsheets 1))
-           (rrange  #p(range rsheet cellidx)))
-    ;; Filter source range
-    (dolist (subscript subscripts)
-      (destructuring-bind (title &rest values)
-          subscript
-;        (format t "wsselect: type of val: ~a~%" (type-of value))
-;        (format t "wsselect: titlecol: ~a~%" (title-column worksheet title))
-        (if (= (length values) 1)
-          #m(autofilter range
-                        (title-column worksheet title)
-                        (first values))
-          #m(autofilter range
-                        (title-column worksheet title)
-                        (first values) 2 (second values)))))
-    ;; Copy selected data to new worksheet
-    #m(copy #m(specialcells range +xl-celltype-visible+))
-    (when paste-column-widths
-      #m(pastespecial rrange +xl-paste-column-widths+))
-    (if paste-all
-      #m(pastespecial rrange +xl-paste-all+)
-      #m(pastespecial rrange +xl-paste-values+))
-    ;; Turn autofilter off
-    #m(autofilter range)
-    ;; Return worksheet containing results
-    (setf #p(saved #p(parent worksheet)) t
-          #p(saved rbook) t)
-    rsheet))|#
-
 
 ;;; Select rows from WORKSHEET using AutoFilter,
 ;;; copy the results into a new temporary workbook.
@@ -330,6 +280,26 @@
     (setf #p(saved #p(parent worksheet)) t
           #p(saved rbook) t)
     rsheet))
+
+
+(defun close-workbook (worksheet)
+  (cclet* ((workbook    #p(parent worksheet))
+           (application #p(application workbook))
+           (workbooks   #p(workbooks application)))
+    #m(close workbook)
+    (when (zerop #p(count workbooks))
+      (setf #p(displayalerts application) nil)
+      #m(quit application))))
+
+
+(defmacro with-xselection ((selected source subscripts &key (paste-all nil) (paste-column-widths nil)) &body body)
+  `(cclet* ((,selected (xselect> ,source ,subscripts :paste-all ,paste-all
+                                 :paste-column-widths ,paste-column-widths)))
+     (unwind-protect
+         (progn
+           ,@body)
+       #m(close #p(parent ,selected)))))
+;       (close-workbook ,selected))))
 
 
 ;;; Transpose a column (an (n 0) array) into a vector.

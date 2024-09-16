@@ -69,12 +69,30 @@ Comparison:
     (let ((vars (mapcar #'first bindings)))
       `(with-com-initialized
          (let* ,bindings
-           (flet ((do-iptrs (fn)
-                    (dolist (var ',vars)
+           (flet ((do-iptrs (fn &optional (order-fn #'identity))
+                    (dolist (var (funcall order-fn ',vars))
                       (when (typep var 'com::com-interface)
                         (funcall fn var)))))
              (unwind-protect
                  (progn
                    (do-iptrs #'com:add-ref)
                    ,@body)
-               (do-iptrs #'com:release))))))))
+               (do-iptrs #'com:release #'reverse))))))))
+
+
+#|;;; ----------------------------------------------------------------------
+;;; Hidden app instances
+
+(defparameter *running-instances* '())
+
+(defun new-app-instance (progid)
+  (cclet* ((ifp (com:create-object :progid progid)))
+    (push (list progid ifp) *running-instances*)
+    ifp))
+
+
+(defun kill-running-instances ()
+  (ignore-errors
+    (dolist (rec *running-instances*)
+      (com:invoke-dispatch-method (second rec) "Quit")))
+  (setf *running-instances* '()))|#
