@@ -177,6 +177,13 @@
       (#_quit application))))
 
 
+;;; Change window visibility.
+(defun window-visible (workbook &optional (window 1) (visible t))
+  (cclet* ((windows #~('windows workbook))
+           (window  #~('item windows window)))
+    (setf #~('visible window) visible)))
+
+
 ;;; Create bindings for an Excel workbook with optional method calls
 ;;; (open, save at the end, close).
 ;; MAYBE OK:
@@ -192,9 +199,7 @@
   (let ((wsheets-clauses (loop for n from 1
                                for var in wsvars collecting
                                (list var `#~('item ,wsheets ,n))))
-        (app2    (gensym))
-        (windows (gensym))
-        (window1 (gensym)))
+        (app2    (gensym)))
     `(cclet* ((,app2    (if ,app
                           ,app
                           (cclet* ((global (com:create-object :progid "Excel.Application")))
@@ -204,12 +209,10 @@
                           (#_open wbooks ,open-file nil ,read-only)
                           (#_add wbooks)))
               (,wsheets #~('worksheets ,wbook))
-              (,windows #~('windows ,wbook))
-              (,window1 #~('item ,windows 1))
               ,@wsheets-clauses)
        (unwind-protect
            (excellerate (,app2)
-             (setf #~('visible ,window1) t)
+             (window-visible ,wbook 1 t)
              ,@body)
          (progn 
            (when (and ,save (not ,read-only))
@@ -237,10 +240,10 @@
       (if (arrayp header)
         (if from-end
           (loop for i from (1- (or end right)) downto (1- (or start left))
-                for v = (funcall key (aref header 0 i))
+                for v = (funcall key (aref header header-row i))
                 thereis (and (funcall test title v) (1+ i)))
           (loop for i from (1- (or start left)) upto (1- (or end right))
-                for v = (funcall key (aref header 0 i))
+                for v = (funcall key (aref header header-row i))
                 thereis (and (funcall test title v) (1+ i))))
         (and (funcall test title header) left)))))
 
@@ -568,3 +571,178 @@
                       "augusztus" "szeptember" "október" "november" "december")))
         (format nil "~4d. ~a ~d." year (nth (1- mon) months) day))
     (format nil "~4d.~2,'0d.~2,'0d." year mon day))))
+
+
+;;; ----------------------------------------------------------------------
+;;; Worksheet as xarray
+
+
+;;; Find xarray column by title.
+(defun title-xacolumn (xarray title &key (test #'equalp) (header-row (1- *header-row*)) (from-end nil))
+  (let ((width (array-dimension xarray 1)))
+    (if from-end
+      (loop for c from (1- width) downto 0
+            for v = (aref xarray header-row c)
+            thereis (and (funcall test title v) c))
+      (loop for c from 0 below width
+            for v = (aref xarray header-row c)
+            thereis (and (funcall test title v) c)))))
+
+
+;;; Find xarray column by number, title or Excel letter.
+(defun resolve-xacolumn-designator (designator xarray)
+  (assert (or (typep designator 'column-designator)
+              (zerop designator))
+      (designator)
+    "Invalid column designator ~a - should be az integer, a keyword or a string" designator)
+  (typecase designator
+    (integer designator)
+    (keyword (1- (letters-column designator)))
+    (string  (title-xacolumn xarray designator))))
+
+
+;;; Extract (indexed) ROW from XARRAY.
+(defun xarow (xarray row &optional (index nil))
+  (let* ((width  (array-dimension xarray 1))
+         (result (make-array (list 2 width)))
+         (r      (if index (svref index row) row)))
+    (loop for c from 0 below width doing
+          (setf (aref result 0 c)
+                (aref xarray 0 c)
+                (aref result 1 c)
+                (aref xarray r c)))
+    result))
+
+
+;;; Indexes xarray reference (reading only).
+(defun xacell (xarray column-designator &optional (row 1) (index nil))
+  (let ((r (if index (svref index (1- row)) row))
+        (c (resolve-xacolumn-designator column-designator xarray)))
+    (aref xarray r c)))
+
+
+;;; Iterate over (indexed) xarray rows.
+(defmacro do-xarows ((current row xarray &optional (index nil)) &body body)
+  (let ((width (gensym))
+        (i     (gensym)))
+    `(let* ((,width   (array-dimension ,xarray 1))
+            (,current (make-array (list 2 ,width))))
+       ;; Filling in the header
+       (loop for c from 0 below ,width doing
+             (setf (aref ,current 0 c)
+                   (aref ,xarray 0 c)))
+       ;; Helper function for filling CURRENT with the current row's values 
+       (flet ((fill-in (,i)
+                (loop for c from 0 below ,width doing
+                      (setf (aref ,current 1 c)
+                            (aref ,xarray ,i c)))))
+         (if ,index
+           ;; If INDEX provided, iterate over it
+           (loop for ,row across ,index doing
+                 (fill-in ,row)
+                 ,@body)
+           ;; Otherwise, iterate over every row
+           (loop for ,row from 1 below (array-dimension ,xarray 0) doing
+                 (fill-in ,row)
+                 ,@body))))))
+
+
+;;; Create an index vector containing row selected by SELECTOR-FN.
+(defun xaselect (xarray selector-fn &optional (previous-index nil))
+  (let ((rowlist '()))
+    (do-xarows (current row xarray previous-index)
+      (when (funcall selector-fn current)
+        (push row rowlist)))
+    (when rowlist
+      (coerce (nreverse rowlist) 'simple-vector))))
+
+
+#|(defmacro with-xaselection ((selection xarray selector-fn &optional previous-selection) &body body)
+  `(let ((,selection (select-xarows ,xarray ,selector-fn ,previous-selection)))
+     ,@body))|#
+
+
+;;; Extract unique values from designated column.
+(defun xauniques (xarray column-designator &key (test #'equalp) (index nil))
+  (let ((values '())
+        (column (resolve-xacolumn-designator column-designator xarray)))
+    ;; Collecting all column values
+    (do-xarows (current row xarray index)
+      (push (xacell current column) values))
+    ;; Dropping duplicates
+    (when values
+      (coerce (nreverse
+               (remove-duplicates values :test test))
+              'simple-vector))))
+           
+
+;;; Iterate over unique values in designated column.
+(defmacro xadouniques ((val xarray column-designator &key (test #'equalp) (selection nil)) &body body)
+  (let ((uniques (gensym)))
+    `(let ((,uniques (xauniques ,xarray ,column-designator :test ,test :selection ,selection)))
+       (loop for ,val across ,uniques doing
+             ,@body))))
+
+
+;;; Helper functions for XAPRED:
+(defun xapred-prev (record)
+  (destructuring-bind (column-designator sorting equality)
+      record
+    (declare (ignore sorting))
+    `(funcall ,equality
+              (xacell a ,column-designator)
+              (xacell b ,column-designator))))
+
+(defun xapred-curr (record)
+  (destructuring-bind (column-designator sorting &optional (equality nil))
+      record
+    (declare (ignore equality))
+    `(funcall ,sorting
+              (xacell a ,column-designator)
+              (xacell b ,column-designator))))
+
+(defun xapred-and (records)
+  (if (second records)
+    (append '(and) (mapcar #'xapred-prev (butlast records))
+            `(,(xapred-curr (first (last records)))))
+    (xapred-curr (first records))))
+
+(defun xapred-or (records &optional (result '()))
+  (if records
+    (xapred-or (butlast records)
+               (cons (xapred-and records)
+                     result))
+    (append '(or) result)))
+  
+;;; Predicate generator for XASORT.
+(defmacro xapred (&rest records)
+  `(lambda (a b)
+     ,(xapred-or records)))
+
+;;; Create new sorted index according to PREDICATE.
+(defun xasort (xarray predicate &optional (previous-index nil))
+  (let ((seq (or (copy-seq previous-index)
+                 (coerce (loop for i from 0 below (1- (array-dimension xarray 0))
+                               collecting i)
+                         'simple-vector))))
+    (sort seq #'(lambda (a b)
+                  (funcall predicate
+                           (xarow xarray a previous-index)
+                           (xarow xarray b previous-index))))))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

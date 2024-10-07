@@ -45,6 +45,16 @@
            #:with-xselection
            #:excel-date
            #:excel-date-string
+           #:title-xacolumn
+           #:resolve-xacolumn-designator
+           #:xarow
+           #:xacell
+           #:do-xarows
+           #:xaselect
+           #:xauniques
+           #:xadouniques
+           #:xapred
+           #:xasort
            #:+wd-section-break-next-page+
            #:+wd-format-document-default+
            #:+wd-header-footer-first-page+

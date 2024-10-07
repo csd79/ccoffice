@@ -28,3 +28,10 @@
       (setf (xrange wsheet 2 2 4 4 :prop 'formula) "=\"\"")
       (setf (xcell wsheet 8 8 :prop 'formula) "=8*8")
       )))
+
+
+(defun l ()
+  (with-workbook (:open-file "c:\\Users\\cselovszkid\\Downloads\\EXPORT_kinevezés.XLSX"
+                  :wsvars (in) :close t :read-only t)
+    (with-used-range (in l u r b)
+      (xrange in l u r b :prop 'value))))
