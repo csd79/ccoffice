@@ -8,21 +8,20 @@
 ;;; ...
 
 
-#|;;; Pedagógusok létszáma vármegyénként 2024.05.31.
-(defparameter *ppt-template* "c:\\Users\\cselovszkid\\Downloads\\2024.07.09\\sablon.pptx")
-(defparameter *ppt-control*  "c:\\Users\\cselovszkid\\Downloads\\2024.07.09\\Létszámadatok_köznevelési intézmények_2024.05.31._WIP.xlsx")
+;;; Pedagógusok létszáma vármegyénként 2024.05.31.
+#|(defparameter *ppt-template* "c:\\Users\\cselovszkid\\Downloads\\2024.07.09\\sablon.pptx")|#
+#|(defparameter *ppt-control*  "c:\\Users\\cselovszkid\\Downloads\\2024.07.09\\Létszámadatok_köznevelési intézmények_2024.05.31._WIP.xlsx")|#
 
-(defparameter *input-directory* "c:\\Users\\cselovszkid\\Downloads\\2024.08.01. Pedagógus túlórák 2023-24 tanév\\éles\\")
+#|(defparameter *input-directory* "c:\\Users\\cselovszkid\\Downloads\\2024.08.01. Pedagógus túlórák 2023-24 tanév\\éles\\")|#
 
-(defparameter *bek*
-  '("2704" "2703" "2785" "2701" "3116" "3115" "2702" "2709" "2708"))
+#|(defparameter *bek*
+  '("2704" "2703" "2785" "2701" "3116" "3115" "2702" "2709" "2708"))|#
 
 
-(defun test9 ()
+#|(defun test9 ()
   (let* ((input-files (directory (concatenate 'string *input-directory* "*.xls*")))
          (input-files-sorted (sort input-files #'string< :key #'namestring)))
-;    (cclet* ((excel    (com:create-object :progid "Excel.Application"))
-    (cclet* ((excel    (new-app-instance "Excel.Application"))
+    (cclet* ((excel    (com:create-object :progid "Excel.Application"))
              (wbooks   #p(workbooks excel))
              (wbook    #m(add wbooks))
              (wsheets  #p(worksheets wbook))

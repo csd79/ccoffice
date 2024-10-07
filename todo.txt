@@ -1,0 +1,14 @@
+             TITLE-COLUMN azt feltételezi hogy a HEADER mindig egy tömb, de ha csak egy oszlop van?!
+
+
+
+
+With (SETF (XRANGE...)), if I change prop to 'value, seemingly no value is accepted. With 'formula, it writes TRUE to the designated cells.
+
+Használja a vágólapot:
+COPY-FORMATTING
+XSELECT>
+
+Any time i modify syntax.lisp, upon the next ASDF system load, the compilation of the next file craps out. But after a LW restart, it compiles fine. So syntax.lisp must be recompiled separatelly before attempting to do the rest?
+
+APPLY-STYLE: only works within the borders of used range at the time of opening the file. Why?

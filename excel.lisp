@@ -8,78 +8,49 @@
 ;;; Workbooks, worksheets
 
 
-;;; Get Excell app.
-(defun get-excel (&optional object)
-  (if object
-    ;; Parrent instance of OBJECT.
-    #p(application object)
-    ;; Any running Excel instance.
-    (com::get-active-object :progid "Excel.Application"
-                            :riid   'i-dispatch
-                            :errorp nil)))
-
-
 (defconstant +xl-calculation-automatic+ -4105)
 (defconstant +xl-calculation-manual+    -4135)
 
 
 ;;; Execute BODY using faster Excel interaction.
 (defmacro excellerate ((excel) &body body)
-  `(unwind-protect 
+  `(let ((su #~('screenupdating ,excel))
+         (da #~('displayalerts ,excel))
+         (c  #~('calculation ,excel)))
+     (unwind-protect 
+         (progn
+           (setf #~('screenupdating ,excel) nil
+                 #~('displayalerts ,excel)  nil)
+           (when #~('visible ,excel)
+             (setf #~('calculation ,excel) +xl-calculation-manual+))
+           ,@body)
        (progn
-         (setf #p(screenupdating ,excel) nil
-               #p(displayalerts ,excel)  nil)
-         (when #p(visible ,excel)
-           (setf #p(calculation ,excel) +xl-calculation-manual+))
-         ,@body)
-     (setf #p(screenupdating ,excel) t
-           #p(displayalerts ,excel)  t)
-     (when #p(visible ,excel)
-       (setf #p(calculation ,excel) +xl-calculation-automatic+))))
+         (when #~('visible ,excel)
+           (setf #~('calculation ,excel) c))
+         (setf #~('displayalerts  ,excel) da
+               #~('screenupdating ,excel) su)))))
 
 
-;;; Open given document with default application, hopefully Excel.
-(defun get-document (fullname)
-  (com::get-object fullname :riid 'com::i-dispatch))
+;;; Transpose a column (an (n 0) array) into a vector.
+(defun column->row (array &key (element-type t) (getter #'identity))
+  (let* ((height (array-dimension array 0))
+         (result (make-array height :element-type element-type)))
+    (loop for i from 0 below height doing
+          (setf (svref result i)
+                (funcall getter
+                         (aref array i 0))))
+    result))
 
 
-;;; List pathname of every open Excel workbook.
-(defun open-workbooks (excel)
-  (cclet* ((workbooks #p(workbooks excel))
-           (count     #p(count workbooks)))
-    (loop for i from 1 upto count collecting
-          #p(fullname #p(item workbooks i)))))
-
-
-;;; List every open worksheet.
-(defun open-worksheets (excel)
-  (let ((workbooks (open-workbooks excel))
-        (results   '()))
-    (dolist (workbook workbooks)
-      (cclet* ((worksheets #p(worksheets (get-document workbook)))
-               (count      #p(count worksheets)))
-        (push workbook results)
-        (push (loop for i from 1 upto count collecting
-                    #p(name #p(item worksheets i)))
-              results)))
-    (nreverse results)))
-
-
-(defun unfreeze-panes (worksheet)
-  (cclet* ((wbook   #p(parent worksheet))
-           (windows #p(windows wbook))
-           (window  #p(item windows 1)))
-    (setf #p(freezepanes window) nil)))
-
-(defun freeze-panes (worksheet column row)
-  (cclet* ((wbook   #p(parent worksheet))
-           (windows #p(windows wbook))
-           (window  #p(item windows 1)))
-    (when #p(freezepanes window)
-      (setf #p(freezepanes window) nil))
-    (setf #p(splitcolumn window) column
-          #p(splitrow window) row
-          #p(freezepanes window) t)))
+;;; Try to interpret VALUE as a number.
+(defun excel-value-as-number (value)
+  (let ((not-string (if (stringp value)
+                      (read-from-string value)
+                      value)))
+    (assert (numberp not-string)
+        (not-string)
+      "Value ~a is not readable as number." not-string)
+    not-string))
 
 
 ;;; ----------------------------------------------------------------------
@@ -90,8 +61,8 @@
 (defun range (worksheet &optional (x1 nil) (y1 nil) (x2 nil) (y2 nil))
   (let ((upper-left (cell-index x1 y1)))
     (if (and x2 y2)
-      #p(range worksheet upper-left (cell-index x2 y2))
-      #p(range worksheet upper-left))))
+      #~('range worksheet upper-left (cell-index x2 y2))
+      #~('range worksheet upper-left))))
 
 
 (defconstant +xl-to-left+          -4159)
@@ -100,32 +71,41 @@
 (defconstant +xl-by-rows+              1)
 (defconstant +xl-by-columns+           2)
 (defconstant +xl-whole+                1)
-(defconstant +xl-previous+             2) 
+(defconstant +xl-previous+             2)
 
-(defmacro with-used-edges ((worksheet left top right bottom) &body body)
-  (let ((whole (gensym))
-        (from  (gensym)))
-    `(cclet* ((,whole  #p(cells ,worksheet))
-              (,top    #p(row #p(end ,whole +xl-up+)))
-              (,left   #p(column #p(end ,whole +xl-to-left+)))
-              (,from   (range ,worksheet ,left ,top))
-              (,bottom #p(row #m(find ,whole "*" ,from +xl-values+
-                                     +xl-whole+ +xl-by-rows+ +xl-previous+)))
-              (,right  #p(column #m(find ,whole "*" ,from +xl-values+
-                                        +xl-whole+ +xl-by-columns+
-                                        +xl-previous+))))
-         ,@body)))
+(defmacro with-used-range ((worksheet left top right bottom) &body body)
+  (let ((whole   (gensym))
+        (from    (gensym))
+        (endup   (gensym))
+        (endleft (gensym))
+        (findbtm (gensym))
+        (findrgt (gensym)))
+    `(let ((,left nil) (,top nil) (,right nil) (,bottom nil))
+       (cclet* ((,whole #~('cells ,worksheet)))
+         (cclet* ((,endup #~('end ,whole +xl-up+)))
+           (setf ,top #~('row ,endup)))
+         (cclet* ((,endleft #~('end ,whole +xl-to-left+)))
+           (setf ,left #~('column ,endleft)))
+         (cclet* ((,from (range ,worksheet ,left ,top)))
+           (cclet* ((,findbtm (#_find ,whole "*" ,from +xl-values+
+                                      +xl-whole+ +xl-by-rows+ +xl-previous+)))
+             (setf ,bottom #~('row ,findbtm)))
+           (cclet* ((,findrgt (#_find ,whole "*" ,from +xl-values+
+                                      +xl-whole+ +xl-by-columns+
+                                      +xl-previous+)))
+             (setf ,right #~('column ,findrgt)))))
+       ,@body)))
 
 
 ;;; Locate used range of WORKSHEET.
 (defun used-range (worksheet)
-  (with-used-edges (worksheet left top right bottom)
+  (with-used-range (worksheet left top right bottom)
     (range worksheet left top right bottom)))
 
 
 ;;; Return number of last row (& last column) of WORKSHEET.
 (defun last-row (worksheet)
-  (with-used-edges (worksheet left top right bottom)
+  (with-used-range (worksheet left top right bottom)
     (values bottom right)))
 
 
@@ -140,23 +120,23 @@
 
 
 ;;; Copy cell formatting between ranges.
-(defun copy-formatting (source destination)
-  #m(copy source)
-  #m(pastespecial destination +xl-paste-formats+)
-  #m(pastespecial destination +xl-paste-comments+)
-  #m(pastespecial destination +xl-paste-validation+))
+(defun copy-formatting (src dst)
+  (#_copy src)
+  (#_pastespecial dst +xl-paste-formats+)
+  (#_pastespecial dst +xl-paste-comments+)
+  (#_pastespecial dst +xl-paste-validation+))
 
 
 ;;; Set auto width for all columns.
 (defun autofit-cols (worksheet)
-  (cclet* ((range #p(columns worksheet)))
-    #m(autofit range)))
+  (cclet* ((range #~('columns worksheet)))
+    (#_autofit range)))
 
 
 ;;; Target range for font formatting.
 (defun font (range &optional first last)
-  #p(font (if (and first last)
-            #p(characters range first last)
+  #~('font (if (and first last)
+            #~('characters range first last)
             range)))
 
 
@@ -183,27 +163,23 @@
 
 
 ;;; ----------------------------------------------------------------------
-;;; Indexing & searching basics
+;;; Opening & closing
 
 
-(defparameter *header-row* 1)
-
-;;; Find the column that has TITLE in its header.
-(defun title-column (worksheet title &key (key #'identity) (header-row *header-row*) (test #'equalp)
-                         (from-end nil) (start nil) (end nil))
-  (with-used-edges (worksheet left top right bottom)
-    (let ((header #p(value2 (range worksheet left header-row right header-row))))
-      (if from-end
-        (loop for i from (1- (or end right)) downto (1- (or start left))
-              for v = (funcall key (aref header 0 i))
-              thereis (and (funcall test title v) (1+ i)))
-        (loop for i from (1- (or start left)) upto (1- (or end right))
-              for v = (funcall key (aref header 0 i))
-              thereis (and (funcall test title v) (1+ i)))))))
+;;; Close WORKBOOK & quit application when there are no more workbooks open.
+(defun close-workbook (workbook)
+  (cclet* ((application #~('application workbook))
+           (workbooks   #~('workbooks application)))
+;    (setf #~('saved workbook) t)
+    (#_close workbook)
+    (when (zerop #~('count workbooks))
+      (setf #~('displayalerts application) nil)
+      (#_quit application))))
 
 
 ;;; Create bindings for an Excel workbook with optional method calls
 ;;; (open, save at the end, close).
+;; MAYBE OK:
 (defmacro with-workbook ((&key (wbook     'wbook)
                                (open-file nil)
                                (app       nil)
@@ -213,108 +189,60 @@
                                (close     t)
                                (save      nil))
                          &body body)
-  (let ((app2            (gensym))
-        (wsheets-clauses (loop for n from 1
+  (let ((wsheets-clauses (loop for n from 1
                                for var in wsvars collecting
-                               (list var `#p(item ,wsheets ,n)))))
+                               (list var `#~('item ,wsheets ,n))))
+        (app2    (gensym))
+        (windows (gensym))
+        (window1 (gensym)))
     `(cclet* ((,app2    (if ,app
-                               ,app
-                               (com:create-object :progid "Excel.Application")))
-                   (wbooks   #p(workbooks ,app2))
-                   (,wbook   (if ,open-file
-                               #m(open wbooks ,open-file nil ,read-only)
-                               #m(add wbooks)))
-                   (,wsheets #p(worksheets ,wbook))
-                   ,@wsheets-clauses)
+                          ,app
+                          (cclet* ((global (com:create-object :progid "Excel.Application")))
+                            #~('application global))))
+              (wbooks   #~('workbooks ,app2))
+              (,wbook   (if ,open-file
+                          (#_open wbooks ,open-file nil ,read-only)
+                          (#_add wbooks)))
+              (,wsheets #~('worksheets ,wbook))
+              (,windows #~('windows ,wbook))
+              (,window1 #~('item ,windows 1))
+              ,@wsheets-clauses)
        (unwind-protect
            (excellerate (,app2)
+             (setf #~('visible ,window1) t)
              ,@body)
          (progn 
            (when (and ,save (not ,read-only))
-             #m(save ,wbook))
+             (#_save ,wbook))
            (when ,close
-             (setf #p(saved ,wbook) t)
-             (setf #p(displayalerts ,app2) nil)
-             #m(close ,wbook)
+             (setf #~('saved ,wbook) t)
+             (setf #~('displayalerts ,app2) nil)
+             (#_close ,wbook)
              (unless ,app
-               #m(quit ,app2))))))))
-
-
-(defconstant +xl-celltype-visible+   12)
-(defconstant +xl-paste-values+    -4163)
-(defconstant +xl-paste-all+       -4104)
-(defconstant +xl-paste-column-widths+ 8)
-(defconstant +and+                    1)
-(defconstant +or+                     2)
-
-;;; Select rows from WORKSHEET using AutoFilter,
-;;; copy the results into a new temporary workbook.
-;;;     (xselect> ws `(("TK" "Eger" +or+ "Baja") ("SZTSZ" ">5" +and+ "<999999")))
-(defun xselect> (worksheet subscripts &key (paste-all nil) (paste-column-widths nil))
-  (cclet* ((cellidx (cell-index 1 1))
-           (range   (used-range worksheet))
-           (topleft (range worksheet 1 1))
-           (excel   #p(application worksheet))
-           (wbooks  #p(workbooks excel))
-           (rbook   #m(add wbooks))
-           (rsheets #p(worksheets rbook))
-           (rsheet  #p(item rsheets 1))
-           (rrange  #p(range rsheet cellidx))
-           (corsubs (mapcar #'(lambda (sub)
-                                (append (list (resolve-column-designator (first sub) worksheet))
-                                        (rest sub)))
-                            subscripts)))
-    ;; Apply filters.
-    (dolist (subscript corsubs)
-      (apply #'com::invoke-dispatch-method topleft "autofilter" subscript))
-    ;; Copy selected data to new worksheet
-    #m(copy #m(specialcells range +xl-celltype-visible+))
-    (when paste-column-widths
-      #m(pastespecial rrange +xl-paste-column-widths+))
-    (if paste-all
-      #m(pastespecial rrange +xl-paste-all+)
-      #m(pastespecial rrange +xl-paste-values+))
-    ;; Turn autofilter off
-    #m(autofilter range)
-    ;; Return worksheet containing results
-    (setf #p(saved #p(parent worksheet)) t
-          #p(saved rbook) t)
-    rsheet))
-
-
-(defun close-workbook (worksheet)
-  (cclet* ((workbook    #p(parent worksheet))
-           (application #p(application workbook))
-           (workbooks   #p(workbooks application)))
-    #m(close workbook)
-    (when (zerop #p(count workbooks))
-      (setf #p(displayalerts application) nil)
-      #m(quit application))))
-
-
-(defmacro with-xselection ((selected source subscripts &key (paste-all nil) (paste-column-widths nil)) &body body)
-  `(cclet* ((,selected (xselect> ,source ,subscripts :paste-all ,paste-all
-                                 :paste-column-widths ,paste-column-widths)))
-     (unwind-protect
-         (progn
-           ,@body)
-       #m(close #p(parent ,selected)))))
-;       (close-workbook ,selected))))
-
-
-;;; Transpose a column (an (n 0) array) into a vector.
-(defun column->row (array &key (element-type t) (getter #'identity))
-  (let* ((height (array-dimension array 0))
-         (result (make-array height :element-type element-type)))
-    (loop for i from 0 below height doing
-          (setf (svref result i)
-                (funcall getter
-                         (aref array i 0))))
-    result))
+               (#_quit ,app2))))))))
+;             (close-workbook ,wbook)))))))
 
 
 ;;; ----------------------------------------------------------------------
 ;;; Cell reference
+
+
+(defparameter *header-row* 1)
+
+;;; Find the column that has TITLE in its header.
+(defun title-column (worksheet title &key (key #'identity) (header-row *header-row*) (test #'equalp)
+                         (from-end nil) (start nil) (end nil))
+  (with-used-range (worksheet left top right bottom)
+    (let ((header #~('value2 (range worksheet left header-row right header-row))))
+      (if (arrayp header)
+        (if from-end
+          (loop for i from (1- (or end right)) downto (1- (or start left))
+                for v = (funcall key (aref header 0 i))
+                thereis (and (funcall test title v) (1+ i)))
+          (loop for i from (1- (or start left)) upto (1- (or end right))
+                for v = (funcall key (aref header 0 i))
+                thereis (and (funcall test title v) (1+ i))))
+        (and (funcall test title header) left)))))
 
 
 ;;; Column designator type and resolution
@@ -337,16 +265,24 @@
     (keyword (letters-column designator))
     (string  (title-column worksheet designator))))
 
-  
+
 ;;; Determine row index by search for value in a column.
-(defun locate-row (worksheet title value function)
+#|(defun locate-row (worksheet title value function)
   (let ((column (title-column worksheet title)))
     (loop for row from 1
-          for v = #p(value2 (range worksheet column row))
+          for v = #~('value2 (range worksheet column row))
           until (null v)
-;          thereis (and (equalp v value)
           thereis (and (funcall function v value)
-                       row))))
+                       row))))|#
+
+(defun locate-row (worksheet column-designator value function)
+  (let* ((column-idx (resolve-column-designator column-designator worksheet))
+         (column     (column->row #~('value2 (range worksheet column-idx 2 column-idx (last-row worksheet))))))
+    (loop for row from 0 below (length column)
+          for v = (svref column row)
+;          until (null v)
+          thereis (and (funcall function v value)
+                       (+ row 2)))))
 
 
 ;;; Row designator type and resolution
@@ -362,7 +298,7 @@
 (deftype row-designator ()
   '(satisfies row-designator-p))
 
-(defun resolve-row-designator (designator &optional worksheet)
+#|(defun resolve-row-designator (designator &optional worksheet)
   (assert (typep designator 'row-designator)
       (designator)
     "Invalid row designator ~a - should be az integer or a list of a column designator, a value and a predicate function" designator)
@@ -370,37 +306,45 @@
     (integer designator)
     (list    (destructuring-bind (title value &optional (function #'equalp))
                  designator
-               (locate-row worksheet title value function)))))
+               (locate-row worksheet title value function)))))|#
+
+(defun resolve-row-designator (designator &optional worksheet)
+  (assert (typep designator 'row-designator)
+      (designator)
+    "Invalid row designator ~a - should be az integer or a list of a column designator, a value and a predicate function" designator)
+  (typecase designator
+    (integer designator)
+    (list    (destructuring-bind (column-designator value &optional (function #'equalp))
+                 designator
+               (locate-row worksheet column-designator value function)))))
 
 
 ;;; Main body of XCELL and SET-XCELL.
-(defun xcell-core (worksheet column row &optional (value nil value-supplied-p))
+(defun xcell-core (worksheet column row &key (value nil value-supplied-p) (prop 'value2))
   (let ((row-final    (resolve-row-designator row worksheet))
         (column-final (resolve-column-designator column worksheet)))
     (if value-supplied-p
-      (setf #p(value2 (range worksheet column-final row-final)) value)
-      #p(value2 (range worksheet column-final row-final)))))
+#|      (setf #~('value2 (range worksheet column-final row-final)) value)
+      #~('value2 (range worksheet column-final row-final)))))|#
+      (setf #~(prop (range worksheet column-final row-final)) value)
+      #~(prop (range worksheet column-final row-final)))))
 
 
 ;;; Simplified cell reference.
-(defun xcell (worksheet column row)
-  (xcell-core worksheet column row))
+(defun xcell (worksheet column row &key (prop 'value2))
+  (xcell-core worksheet column row :prop prop))
 
-(defun set-xcell (worksheet column row value)
-  (xcell-core worksheet column row value))
-
-(defsetf xcell set-xcell)
+(defun (setf xcell) (value worksheet column row &key (prop 'value2))
+  (xcell-core worksheet column row :value value :prop prop))
 
 
-(defun excel-value-as-number (value)
-  (let ((not-string (if (stringp value)
-                      (read-from-string value)
-                      value)))
-    (assert (numberp not-string)
-        (not-string)
-      "Value ~a is not readable as number." not-string)
-    not-string))
+;(defun set-xcell (worksheet column row value &key (prop 'value2))
+;  (xcell-core worksheet column row :value value :prop prop))
 
+;(defsetf xcell set-xcell)
+
+(defun (setf xrange) (value worksheet c1 r1 c2 r2 &key (prop 'value2))
+  (xrange-core worksheet c1 r1 c2 r2 :value value :prop prop))
 
 ;;; ----------------------------------------------------------------------
 ;;; Range reference
@@ -440,7 +384,7 @@
 (defparameter *xrange-target-too-large* :restrict)      ; :ERROR  :FULFILL  :RESTRICT
 
 ;;; Multiple cell range assignment.
-(defun set-xrange-worker (worksheet c1 r1 c2 r2 value)
+(defun set-xrange-worker (worksheet c1 r1 c2 r2 value prop)
   (let ((range-width  (1+ (abs (- c1 c2))))
         (range-height (1+ (abs (- r1 r2))))
         (value-width  (array-dimension value 1))
@@ -459,7 +403,7 @@
                  r2
                  (min r2 (1- (+ r1 value-height))))))
       ;; Assign VALUE to a downsized target range.
-      (setf #p(value2 (range worksheet c1 r1 c2r r2r)) value)
+      (setf #~(prop (range worksheet c1 r1 c2r r2r)) value)
       ;; Add fill when needed
       (when (eq *xrange-target-too-large* :fulfill)
         (let ((rightp (and (not (2d-array-column-p value))
@@ -468,20 +412,20 @@
                            (> range-height value-height))))
           ;; Right side fill
           (when rightp
-            (setf #p(value2 (range worksheet (1+ c2r) r1 c2 r2r))
+            (setf #~(prop (range worksheet (1+ c2r) r1 c2 r2r))
                   *xrange-default-value*))
           ;; Lower fill
           (when lowerp
-            (setf #p(value2 (range worksheet c1 (1+ r2r) c2r r2))
+            (setf #~(prop (range worksheet c1 (1+ r2r) c2r r2))
                   *xrange-default-value*))
           ;; Lower right fill
           (when (and rightp lowerp)
-            (setf #p(value2 (range worksheet (1+ c2r) (1+ r2r) c2 r2))
+            (setf #~(prop (range worksheet (1+ c2r) (1+ r2r) c2 r2))
                   *xrange-default-value*)))))))
 
 
 ;;; Prefilter arg combinations that yield simple assignment or no assignment.
-(defun precide-xrange (worksheet c1 r1 c2 r2 value)
+(defun precide-xrange (worksheet c1 r1 c2 r2 value prop)
   ;; Prevent invalid keywords in control vars.
   (when (not (member *xrange-target-too-small* '(:error :fill-to-limit)))
     (error "Unknown keyword: ~a." *xrange-target-too-small*))
@@ -497,14 +441,15 @@
    ;; Value is an atom, will be assigned to every cell in range.
    ((and (atom value)
          (not (arrayp value)))
-    (setf #p(value2 (range worksheet c1 r1 c2 r2)) value))
+    (setf #~(prop (range worksheet c1 r1 c2 r2)) value))
    ;; Value is a list or a vector: convert value to a 2D array row.
    ((or (listp   value)
         (vectorp value))
     (precide-xrange
      worksheet c1 r1 c2 r2
      (make-array (list 1 (length value))
-                 :initial-contents (list (coerce value 'list)))))
+                 :initial-contents (list (coerce value 'list)))
+     prop))
    ;; Range is a column but value is not: error.
    ((and (= c1 c2)
          (not (2d-array-column-p value)))
@@ -514,27 +459,85 @@
          (or (2d-array-column-p value) (2d-array-p value)))
     (error "Cannot assign ~a to a row of cells." value))
    ;; Otherwise, set range to values in collection.
-   (t (set-xrange-worker worksheet c1 r1 c2 r2 value))))
+   (t (set-xrange-worker worksheet c1 r1 c2 r2 value prop))))
 
-;;; Main body of XCELL and SET-XCELL.
-(defun xrange-core (worksheet c1 r1 c2 r2 &optional (value nil value-supplied-p))
+;;; Main body of XRANGE and SET-XRANGE.
+(defun xrange-core (worksheet c1 r1 c2 r2 &key (value nil value-supplied-p) (prop 'value2))
   (let ((c1final (resolve-column-designator c1 worksheet))
         (c2final (resolve-column-designator c2 worksheet))
         (r1final (resolve-row-designator r1 worksheet))
         (r2final (resolve-row-designator r2 worksheet)))
     (if value-supplied-p
-      (precide-xrange worksheet c1final r1final c2final r2final value)
-      #p(value2 (range worksheet c1final r1final c2final r2final)))))
+      (precide-xrange worksheet c1final r1final c2final r2final value prop)
+      #~(prop (range worksheet c1final r1final c2final r2final)))))
 
 
 ;;; Simplified cell reference.
-(defun xrange (worksheet c1 r1 c2 r2)
-  (xrange-core worksheet c1 r1 c2 r2))
+(defun xrange (worksheet c1 r1 c2 r2 &key (prop 'value2))
+  (xrange-core worksheet c1 r1 c2 r2 :prop prop))
 
-(defun set-xrange (worksheet c1 r1 c2 r2 value)
-  (xrange-core worksheet c1 r1 c2 r2 value))
+(defun (setf xrange) (value worksheet c1 r1 c2 r2 &key (prop 'value2))
+  (xrange-core worksheet c1 r1 c2 r2 :value value :prop prop))
 
-(defsetf xrange set-xrange)
+;(defun set-xrange (worksheet c1 r1 c2 r2 value &key (prop 'value2))
+;(defsetf xrange set-xrange)
+
+
+;;; ----------------------------------------------------------------------
+;;; Filtering
+
+
+(defconstant +xl-celltype-visible+   12)
+(defconstant +xl-paste-values+    -4163)
+(defconstant +xl-paste-all+       -4104)
+(defconstant +xl-paste-column-widths+ 8)
+(defconstant +and+                    1)
+(defconstant +or+                     2)
+
+;;; Select rows from WORKSHEET using AutoFilter,
+;;; copy the results into a new temporary workbook.
+;;;     (xselect> ws `(("TK" "Eger" +or+ "Baja") ("SZTSZ" ">5" +and+ "<999999")))
+(defun xselect> (worksheet subscripts &key (paste-all nil) (paste-column-widths nil))
+  (cclet* ((cellidx (cell-index 1 1))
+           (range   (used-range worksheet))
+           (topleft (range worksheet 1 1))
+           (excel   #~('application worksheet))
+           (wbooks  #~('workbooks excel))
+           (rbook   (#_add wbooks))
+           (rsheets #~('worksheets rbook))
+           (rsheet  #~('item rsheets 1))
+           (rrange  #~('range rsheet cellidx))
+           (corsubs (mapcar #'(lambda (sub)
+                                (append (list (resolve-column-designator (first sub) worksheet))
+                                        (rest sub)))
+                            subscripts)))
+    ;; Apply filters.
+    (dolist (subscript corsubs)
+      (apply #'com::invoke-dispatch-method topleft "autofilter" subscript))
+    ;; Copy selected data to new worksheet
+    (#_copy (#_specialcells range +xl-celltype-visible+))
+    (when paste-column-widths
+      (#_pastespecial rrange +xl-paste-column-widths+))
+    (if paste-all
+      (#_pastespecial rrange +xl-paste-all+)
+      (#_pastespecial rrange +xl-paste-values+))
+    ;; Turn autofilter off
+    (#_autofilter range)
+    ;; Return worksheet containing results
+    (setf #~('saved #~('parent worksheet)) t
+          #~('saved rbook) t)
+    rsheet))
+
+
+(defmacro with-xselection ((selected source subscripts &key (paste-all nil) (paste-column-widths nil)) &body body)
+  (let ((wbook (gensym)))
+    `(cclet* ((,selected (xselect> ,source ,subscripts :paste-all ,paste-all
+                                   :paste-column-widths ,paste-column-widths)))
+       (unwind-protect
+           (progn
+             ,@body)
+         (cclet* ((,wbook (#_parent ,selected)))
+           (close-workbook ,wbook))))))
 
 
 ;;; ----------------------------------------------------------------------

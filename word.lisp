@@ -4,12 +4,15 @@
 (in-package #:ccom)
 
 
-(defconstant +wd-section-break-next-page+  2)
-(defconstant +wd-format-document-default+ 16)
-(defconstant +wd-header-footer-first-page+ 2)
-(defconstant +wd-header-footer-primary+    1)
-(defconstant +wd-align-page-number-center+ 1)
-(defconstant +wd-find-continue+            1)
+;;; ----------------------------------------------------------------------
+;;; Globals
+
+
+(defconstant  +wd-section-break-next-page+  2)
+(defconstant  +wd-format-document-default+ 16)
+(defconstant  +wd-header-footer-first-page+ 2)
+(defconstant  +wd-header-footer-primary+    1)
+(defconstant  +wd-align-page-number-center+ 1)
 
 
 ;;; ----------------------------------------------------------------------
@@ -28,36 +31,38 @@
     `(cclet* ((,app2 (if (boundp ',app)
                        ,app
                        (com:create-object :progid "Word.Application")))
-              (docs  #p(documents ,app2))
+              (docs  #~('documents ,app2))
               (,doc  (if ,open-file
-                       #m(open docs ,open-file nil ,read-only)
-                       #m(add docs))))
+                       (#_open docs ,open-file nil ,read-only)
+                       (#_add docs))))
        (unwind-protect 
            (progn
-             (setf #p(screenupdating ,app2) nil)
+             (setf #~('screenupdating ,app2) nil)
              ,@body)
          (progn 
-           (setf #p(screenupdating ,app2) t)
+           (setf #~('screenupdating ,app2) t)
            (when (and ,save (not ,read-only))
-             #m(save ,doc))
+             (#_save ,doc))
            (when ,close
-             (setf #p(saved ,doc) t)
-             #m(close ,doc)
+             (setf #~('saved ,doc) t)
+             (#_close ,doc)
              (unless (boundp ',app)
-               #m(quit ,app2))))))))
+               (#_quit ,app2))))))))
 
 
 (defun begining-of-doc (document)
-  #p(first #p(characters document)))
+  #~('first #~('characters document)))
 
 
 (defun end-of-doc (document)
-  #p(last #p(characters document)))
+  #~('last #~('characters document)))
 
 
 ;;; ----------------------------------------------------------------------
 ;;; Text mangling
 
+
+(defconstant +wd-find-continue+ 1)
 
 (defun trim-text (text)
   (if (> (length text) 250)
@@ -67,11 +72,11 @@
   
 
 (defun range-find-text (range text)
-  (cclet* ((find #p(find range)))
-    #m(execute find (trim-text text) nil nil nil nil nil t
+  (cclet* ((find #~('find range)))
+    (#_execute find (trim-text text) nil nil nil nil nil t
                +wd-find-continue+ nil)
-    (when #p(found find)
-      #p(start range))))
+    (when #~('found find)
+      #~('start range))))
   
 
 (defun carriage-return (string)
@@ -85,71 +90,23 @@
 
 
 (defun selection-overwrite (range start end text)
-  #m(select range)
-  (cclet* ((document  #p(document range))
-           (selection #p(selection #p(activewindow document)))
+  (#_select range)
+  (cclet* ((document  #~('document range))
+           (selection #~('selection #~('activewindow document)))
            (text2     (if (string= text "")
                         " "
                         text)))
-    #m(setrange selection start end)
-    #m(typetext selection (carriage-return text2))
+    (#_setrange selection start end)
+    (#_typetext selection (carriage-return text2))
     (when (string/= text text2)
-      #m(typebackspace selection))))
+      (#_typebackspace selection))))
 
 
 (defun footer (document section type)
-  #p(range #m(item #p(footers #m(item #p(sections document) section))
+  #~('range (#_item #~('footers (#_item #~('sections document) section))
                            type)))
 
 
 (defun header (document section type)
-  #p(range #m(item #p(headers #m(item #p(sections document) section))
+  #~('range (#_item #~('headers (#_item #~('sections document) section))
                            type)))
-
-
-#|(defun range-replace-text (range orig-text new-text)
-
-
-;;; Replace text in Word doc (including headers & footers).
-(defun word-replace-text (document orig-text new-text)
-  (cclet* ((body     #p(content document))
-           (sections #p(sections document)))
-    ;; Body
-    (range-replace-text body orig-text new-text)
-    ;; Headers & footers
-    (loop for i from 1 upto #p(count sections)
-          for section = #m(item sections i)
-          for headers = #p(headers section)
-          for footers = #p(footers section) doing
-          ;; Headers
-          (loop for j from 1 upto #p(count headers)
-                for header = #m(item headers j) doing
-                (range-replace-text #p(range header) orig-text new-text)
-;                (print #p(text #p(range header)))
-                )
-          ;; Footers
-          (loop for k from 1 upto #p(count footers)
-                for footer = #m(item footers k) doing
-                (range-replace-text #p(range footer) orig-text new-text)
-;                (print #p(text #p(range footer)))
-                ))))|#
-  
-
-
-;(defparameter *cr* (format nil "~C" #\Return))
-
-
-
-#|(defun word-replace1st (document old-text new-text
-                                 &key (range #'(lambda (doc)
-                                                 #p(content doc))))
-  (cclet* ((old    (carriage-return old-text))
-           (new    (carriage-return new-text))
-           (select #p(selection #p(activewindow document)))
-           (start  (range-find-text (funcall range document) old))
-           (end    (when start
-                     (+ start (length old)))))
-;    (print start)))
-    (when start
-      #m(setrange select start end)
-      #m(typetext select new))))|#

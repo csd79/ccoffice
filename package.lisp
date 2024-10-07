@@ -6,37 +6,29 @@
 
 (defpackage #:ccom
   (:use #:cl)
-  (:export #:#p
-           #:#m
-           #:cclet*
-           #:column
+  (:export #:column
            #:cell-index
            #:letters-column
            #:with-com-initialized
            #:file-in-dir
-           #:flitmp
-           #:new-app-instance
-           #:kill-running-instances
-           #:get-excel
+           #:print-used-fli-templates
+           #:#~
+           #:#_
+           #:cclet*
            #:excellerate
-           #:get-document
-           #:open-worksheets
-           #:unfreeze-panes
-           #:freeze-panes
+           #:column->row
+           #:excel-value-as-number
            #:range
-           #:with-used-edges
+           #:with-used-range
            #:used-range
            #:last-row
            #:copy-formatting
            #:autofit-cols
            #:font
            #:apply-style
-           #:title-column
-           #:with-workbook
-           #:xselect>
            #:close-workbook
-           #:with-xselection
-           #:column->row
+           #:with-workbook
+           #:title-column
            #:column-designator-p
            #:column-designator
            #:resolve-column-designator
@@ -45,11 +37,12 @@
            #:row-designator
            #:resolve-row-designator
            #:xcell
-           #:excel-value-as-number
            #:*xrange-default-value*
            #:*xrange-target-too-small*
            #:*xrange-target-too-large*
            #:xrange
+           #:xselect>
+           #:with-xselection
            #:excel-date
            #:excel-date-string
            #:+wd-section-break-next-page+
@@ -57,13 +50,11 @@
            #:+wd-header-footer-first-page+
            #:+wd-header-footer-primary+
            #:+wd-align-page-number-center+
-           #:+wd-find-continue+
            #:with-document
            #:begining-of-doc
            #:end-of-doc
            #:range-find-text
+           #:carriage-return
            #:selection-overwrite
            #:footer
-           #:header
-           #:carriage-return
-))
+           #:header))
