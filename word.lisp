@@ -9,6 +9,8 @@
 
 
 (defconstant  +wd-section-break-next-page+  2)
+(defconstant  +wd-section-break-odd-page+   5)
+(defconstant  +wd-page-break+               7)
 (defconstant  +wd-format-document-default+ 16)
 (defconstant  +wd-header-footer-first-page+ 2)
 (defconstant  +wd-header-footer-primary+    1)
@@ -21,7 +23,44 @@
 
 ;;; Create bindings for an Excel workbook with optional method calls
 ;;; (open, save at the end, close).
-(defmacro with-document ((doc &key (open-file nil)
+(defmacro with-document ((&key (app       nil)
+                               (doc       'doc)
+                               (use       nil)
+                               (open      nil)
+                               (read-only nil)
+                               (save      nil)
+                               (close     t))
+                         &body body)
+  (let ((app-obj (gensym))
+        (docs    (gensym))
+        (doc-obj (gensym))
+        (update  (gensym)))
+    `(cclet* ((,app-obj (or ,app 
+                            (cclet* ((global (com:create-object :progid "Word.Application"))
+                                     (app    #~('application global)))
+                              (setf #~('visible app) nil)
+                              app)))
+              (,docs    #~('documents ,app-obj))
+              (,doc-obj (or (when (typep ,use 'com::com-interface) ,use)
+                            (when ,open (#_open ,docs ,open nil ,read-only))
+                            (#_add ,docs)))
+              (,doc     ,doc-obj)
+              (,update  #~('screenupdating ,app-obj)))
+       (unwind-protect
+           (progn
+             (setf #~('screenupdating ,app-obj) nil)
+             ,@body)
+         (progn 
+           (setf #~('screenupdating ,app-obj) ,update)
+           (when (and ,save (not ,read-only))
+             (#_save ,doc))
+           (when ,close
+             (setf #~('saved ,doc) t)
+             (setf #~('displayalerts ,app-obj) nil)
+             (#_close ,doc)
+             (unless ,app
+               (#_quit ,app-obj))))))))
+#|(defmacro with-document ((doc &key (open-file nil)
                                    (app       'word)
                                    (read-only nil)
                                    (close     t)
@@ -47,7 +86,7 @@
              (setf #~('saved ,doc) t)
              (#_close ,doc)
              (unless (boundp ',app)
-               (#_quit ,app2))))))))
+               (#_quit ,app2))))))))|#
 
 
 (defun begining-of-doc (document)

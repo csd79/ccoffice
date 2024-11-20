@@ -82,7 +82,6 @@ Comparison:
                         (funcall fn var)))))
              (unwind-protect
                  (progn
-;                   (do-iptrs #'com:add-ref)
                    ,@body)
                (do-iptrs #'com:release #'reverse))))))
     `(progn

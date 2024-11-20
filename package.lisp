@@ -5,7 +5,7 @@
 
 
 (defpackage #:ccom
-  (:use #:cl)
+  (:use #:cl #:achar)
   (:export #:column
            #:cell-index
            #:letters-column
@@ -18,10 +18,12 @@
            #:excellerate
            #:column->row
            #:excel-value-as-number
+           #:freeze-panes
            #:range
            #:with-used-range
            #:used-range
            #:last-row
+           #:with-range
            #:copy-formatting
            #:autofit-cols
            #:font
@@ -32,7 +34,6 @@
            #:column-designator-p
            #:column-designator
            #:resolve-column-designator
-           #:locate-row
            #:row-designator-p
            #:row-designator
            #:resolve-row-designator
@@ -45,10 +46,14 @@
            #:with-xselection
            #:excel-date
            #:excel-date-string
-           #:title-xacolumn
-           #:resolve-xacolumn-designator
-           #:xarow
-           #:xacell
+           #:index
+           #:read-xarray
+           #:make-xarray
+           #:rearrange
+           #:write-xarray
+           #:xaref
+           #:xcref
+           #:xarows
            #:do-xarows
            #:xaselect
            #:xauniques
@@ -56,6 +61,8 @@
            #:xapred
            #:xasort
            #:+wd-section-break-next-page+
+           #:+wd-section-break-odd-page+
+           #:+wd-page-break+
            #:+wd-format-document-default+
            #:+wd-header-footer-first-page+
            #:+wd-header-footer-primary+

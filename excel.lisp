@@ -16,19 +16,28 @@
 (defmacro excellerate ((excel) &body body)
   `(let ((su #~('screenupdating ,excel))
          (da #~('displayalerts ,excel))
-         (c  #~('calculation ,excel)))
+         (c  #~('calculation ,excel))
+         (ee #~('enableevents ,excel)))
      (unwind-protect 
          (progn
-           (setf #~('screenupdating ,excel) nil
+#|           (setf #~('screenupdating ,excel) nil
                  #~('displayalerts ,excel)  nil)
            (when #~('visible ,excel)
-             (setf #~('calculation ,excel) +xl-calculation-manual+))
+             (setf #~('calculation ,excel) +xl-calculation-manual+))|#
+           (setf #~('screenupdating ,excel) nil
+                 #~('displayalerts ,excel)  nil
+                 #~('calculation ,excel) +xl-calculation-manual+
+                 #~('enableevents ,excel) nil)
            ,@body)
        (progn
-         (when #~('visible ,excel)
+#|         (when #~('visible ,excel)
            (setf #~('calculation ,excel) c))
          (setf #~('displayalerts  ,excel) da
-               #~('screenupdating ,excel) su)))))
+               #~('screenupdating ,excel) su)))))|#
+         (setf #~('calculation ,excel) c
+               #~('displayalerts  ,excel) da
+               #~('screenupdating ,excel) su
+               #~('enableevents ,excel) ee)))))
 
 
 ;;; Transpose a column (an (n 0) array) into a vector.
@@ -53,6 +62,22 @@
     not-string))
 
 
+;;; Freeze panes after given column and/or row.
+;;; When no parameter is supplied, unfreeze panes.
+(defun freeze-panes (wsheet &key (after-column nil) (after-row nil))
+  (cclet* ((app #~('application wsheet))
+           (win #~('activewindow app)))
+    (if (or after-column after-row)
+      (progn
+        (setf #~('freezepanes win) nil)
+        (when after-column
+          (setf #~('splitcolumn win) after-column))
+        (when after-row
+          (setf #~('splitrow win) after-row))
+        (setf #~('freezepanes win) t))
+      (setf #~('freezepanes win) nil))))
+
+
 ;;; ----------------------------------------------------------------------
 ;;; Ranges, values
 
@@ -67,12 +92,15 @@
 
 (defconstant +xl-to-left+          -4159)
 (defconstant +xl-up+               -4162)
+(defconstant +xl-to-right+         -4161)
+(defconstant +xl-down+             -4121)
 (defconstant +xl-values+           -4163)
 (defconstant +xl-by-rows+              1)
 (defconstant +xl-by-columns+           2)
 (defconstant +xl-whole+                1)
 (defconstant +xl-previous+             2)
 
+;;; Edges of the used range of WORKSHEET.
 (defmacro with-used-range ((worksheet left top right bottom) &body body)
   (let ((whole   (gensym))
         (from    (gensym))
@@ -97,7 +125,7 @@
        ,@body)))
 
 
-;;; Locate used range of WORKSHEET.
+;;; Used range.
 (defun used-range (worksheet)
   (with-used-range (worksheet left top right bottom)
     (range worksheet left top right bottom)))
@@ -107,6 +135,21 @@
 (defun last-row (worksheet)
   (with-used-range (worksheet left top right bottom)
     (values bottom right)))
+
+
+;;; Edges of RANGE.
+(defmacro with-range ((range left top right bottom) &body body)
+  (let ((cols (gensym))
+        (rows (gensym)))
+  `(let ((,left   #~('column ,range))
+         (,top    #~('row ,range))
+         (,right  nil)
+         (,bottom nil))
+     (cclet* ((,cols #~('columns ,range)))
+       (setf ,right (1- (+ ,left #~('count ,cols)))))
+     (cclet* ((,rows #~('rows ,range)))
+       (setf ,bottom (1- (+ ,top #~('count ,rows)))))
+     ,@body)))
 
 
 ;;; ----------------------------------------------------------------------
@@ -170,7 +213,6 @@
 (defun close-workbook (workbook)
   (cclet* ((application #~('application workbook))
            (workbooks   #~('workbooks application)))
-;    (setf #~('saved workbook) t)
     (#_close workbook)
     (when (zerop #~('count workbooks))
       (setf #~('displayalerts application) nil)
@@ -186,44 +228,48 @@
 
 ;;; Create bindings for an Excel workbook with optional method calls
 ;;; (open, save at the end, close).
-;; MAYBE OK:
-(defmacro with-workbook ((&key (wbook     'wbook)
-                               (open-file nil)
-                               (app       nil)
-                               (read-only nil)
-                               (wsheets   'wsheets)
+(defmacro with-workbook ((&key (app       nil)
+                               (wbook     'wbook)
+                               (use       nil)
+                               (open      nil)
                                (wsvars    '())
-                               (close     t)
-                               (save      nil))
+                               (read-only nil)
+                               (save      nil)
+                               (close     t))
                          &body body)
-  (let ((wsheets-clauses (loop for n from 1
-                               for var in wsvars collecting
-                               (list var `#~('item ,wsheets ,n))))
-        (app2    (gensym)))
-    `(cclet* ((,app2    (if ,app
-                          ,app
-                          (cclet* ((global (com:create-object :progid "Excel.Application")))
-                            #~('application global))))
-              (wbooks   #~('workbooks ,app2))
-              (,wbook   (if ,open-file
-                          (#_open wbooks ,open-file nil ,read-only)
-                          (#_add wbooks)))
-              (,wsheets #~('worksheets ,wbook))
-              ,@wsheets-clauses)
+  (let ((app-obj (gensym))
+        (wbooks  (gensym))
+        (doc-obj (gensym))
+        (wsheets (gensym)))
+    `(cclet* ((,app-obj (or ,app 
+                            (cclet* ((global (com:create-object :progid "Excel.Application")))
+                              #~('application global))))
+              (,wbooks  #~('workbooks ,app-obj))
+              (,doc-obj (or (when (typep ,use 'com::com-interface) ,use)
+                            (when ,open (#_open ,wbooks ,open nil ,read-only))
+                            (#_add ,wbooks)))
+              (,wbook   ,doc-obj)
+              (,wsheets #~('worksheets ,doc-obj))
+              ,@(loop for n from 1
+                      for var in wsvars
+                      when var collect
+                      (list var `#~('item ,wsheets ,n))))
        (unwind-protect
-           (excellerate (,app2)
-             (window-visible ,wbook 1 t)
+           (excellerate (,app-obj)
+             (when (eq ,use ,doc-obj)
+               (print "сhhссссс")
+               (com:add-ref ,doc-obj))
+             (window-visible ,doc-obj 1 t)
              ,@body)
          (progn 
            (when (and ,save (not ,read-only))
-             (#_save ,wbook))
+             (#_save ,doc-obj))
            (when ,close
-             (setf #~('saved ,wbook) t)
-             (setf #~('displayalerts ,app2) nil)
-             (#_close ,wbook)
+             (setf #~('saved ,doc-obj) t)
+             (setf #~('displayalerts ,app-obj) nil)
+             (#_close ,doc-obj)
              (unless ,app
-               (#_quit ,app2))))))))
-;             (close-workbook ,wbook)))))))
+               (#_quit ,app-obj))))))))
 
 
 ;;; ----------------------------------------------------------------------
@@ -240,10 +286,10 @@
       (if (arrayp header)
         (if from-end
           (loop for i from (1- (or end right)) downto (1- (or start left))
-                for v = (funcall key (aref header header-row i))
+                for v = (funcall key (aref header (1- header-row) i))
                 thereis (and (funcall test title v) (1+ i)))
           (loop for i from (1- (or start left)) upto (1- (or end right))
-                for v = (funcall key (aref header header-row i))
+                for v = (funcall key (aref header (1- header-row) i))
                 thereis (and (funcall test title v) (1+ i))))
         (and (funcall test title header) left)))))
 
@@ -269,21 +315,11 @@
     (string  (title-column worksheet designator))))
 
 
-;;; Determine row index by search for value in a column.
-#|(defun locate-row (worksheet title value function)
-  (let ((column (title-column worksheet title)))
-    (loop for row from 1
-          for v = #~('value2 (range worksheet column row))
-          until (null v)
-          thereis (and (funcall function v value)
-                       row))))|#
-
 (defun locate-row (worksheet column-designator value function)
   (let* ((column-idx (resolve-column-designator column-designator worksheet))
          (column     (column->row #~('value2 (range worksheet column-idx 2 column-idx (last-row worksheet))))))
     (loop for row from 0 below (length column)
           for v = (svref column row)
-;          until (null v)
           thereis (and (funcall function v value)
                        (+ row 2)))))
 
@@ -301,15 +337,6 @@
 (deftype row-designator ()
   '(satisfies row-designator-p))
 
-#|(defun resolve-row-designator (designator &optional worksheet)
-  (assert (typep designator 'row-designator)
-      (designator)
-    "Invalid row designator ~a - should be az integer or a list of a column designator, a value and a predicate function" designator)
-  (typecase designator
-    (integer designator)
-    (list    (destructuring-bind (title value &optional (function #'equalp))
-                 designator
-               (locate-row worksheet title value function)))))|#
 
 (defun resolve-row-designator (designator &optional worksheet)
   (assert (typep designator 'row-designator)
@@ -327,8 +354,6 @@
   (let ((row-final    (resolve-row-designator row worksheet))
         (column-final (resolve-column-designator column worksheet)))
     (if value-supplied-p
-#|      (setf #~('value2 (range worksheet column-final row-final)) value)
-      #~('value2 (range worksheet column-final row-final)))))|#
       (setf #~(prop (range worksheet column-final row-final)) value)
       #~(prop (range worksheet column-final row-final)))))
 
@@ -339,12 +364,6 @@
 
 (defun (setf xcell) (value worksheet column row &key (prop 'value2))
   (xcell-core worksheet column row :value value :prop prop))
-
-
-;(defun set-xcell (worksheet column row value &key (prop 'value2))
-;  (xcell-core worksheet column row :value value :prop prop))
-
-;(defsetf xcell set-xcell)
 
 (defun (setf xrange) (value worksheet c1 r1 c2 r2 &key (prop 'value2))
   (xrange-core worksheet c1 r1 c2 r2 :value value :prop prop))
@@ -482,9 +501,6 @@
 (defun (setf xrange) (value worksheet c1 r1 c2 r2 &key (prop 'value2))
   (xrange-core worksheet c1 r1 c2 r2 :value value :prop prop))
 
-;(defun set-xrange (worksheet c1 r1 c2 r2 value &key (prop 'value2))
-;(defsetf xrange set-xrange)
-
 
 ;;; ----------------------------------------------------------------------
 ;;; Filtering
@@ -555,7 +571,7 @@
          (d    (truncate (/ (* 4000 (+ c 1)) 1461001)))
          (e    (+ (- c (+ (truncate (/ (* 1461 d) 4)))) 31))
          (f    (truncate (/ (* 80 e) 2447)))
-         (day  (- e (truncate (/ (* 2447 f) 80))))
+         (day  (round (- e (truncate (/ (* 2447 f) 80)))))
          (g    (truncate (/ f 11)))
          (mon  (- (+ f 2) (* 12 g)))
          (year (+ (* 100 (- b 49)) d g)))
@@ -577,20 +593,98 @@
 ;;; Worksheet as xarray
 
 
-;;; Find xarray column by title.
-(defun title-xacolumn (xarray title &key (test #'equalp) (header-row (1- *header-row*)) (from-end nil))
-  (let ((width (array-dimension xarray 1)))
-    (if from-end
-      (loop for c from (1- width) downto 0
-            for v = (aref xarray header-row c)
-            thereis (and (funcall test title v) c))
-      (loop for c from 0 below width
-            for v = (aref xarray header-row c)
-            thereis (and (funcall test title v) c)))))
+;;; Class for representing Excel worksheet as Lisp array(s).
+(defclass xarray ()
+  ((head  :initarg  :head
+          :accessor head)
+   (body  :initarg  :body
+          :accessor body)
+   (index :initarg  :index
+          :accessor index)))
+
+
+;;; Extract header into a simple vector.
+(defun array-row->vector (array row)
+  (let* ((width  (array-dimension array 1))
+         (result (make-array width)))
+    (loop for c from 0 below width doing
+          (setf (aref result c)
+                (aref array row c)))
+    result))
+
+
+;;; Create new raw index for BODY.
+(defun raw-index (body)
+  (let ((height (array-dimension body 0)))
+    (coerce (loop for i from 0 below height collecting i)
+            'simple-vector)))
+
+
+;;; Craete XARRAY obj containing values from RANGE.
+;(defun read-xarray (range)
+(defun read-xarray (range &key (accessor 'value2))
+  (with-range (range left top right bottom)
+    (cclet* ((wsheet #~('worksheet range))
+             (headr  (range wsheet left top right top))
+             (bodyr  (range wsheet left (1+ top) right bottom))
+;             (body   #~('value2 bodyr))
+             (body   #~(accessor bodyr))
+             (index  (raw-index body)))
+    (make-instance 'xarray
+;                   :head  (array-row->vector #~('value2 headr) 0)
+                   :head  (array-row->vector #~(accessor headr) 0)
+                   :body  body
+                   :index index))))
+
+
+;;; Create an empty xarray.
+(defun make-xarray (headers number-of-rows)
+  (let ((body (make-array (list number-of-rows (length headers)))))
+    (make-instance 'xarray
+                   :head  (coerce headers 'simple-vector)
+                   :body  body
+                   :index (raw-index body))))
+
+
+;;; Rearrange XARRAY into a new xarray according to its index.
+(defun rearrange (xarray)
+  (with-slots ((head head) (body body) (index index))
+      xarray
+    (let* ((width    (length head))
+           (new-body (make-array (list (length index) width))))
+      (loop for idx across index
+            for drow from 0 doing
+            (loop for col from 0 below width doing
+                  (setf (aref new-body drow col)
+                        (aref body idx col))))
+      (make-instance 'xarray
+                     :head head
+                     :body new-body
+                     :index (raw-index new-body)))))
+
+
+;;; Copy contents of XARRAY into Excel RANGE.
+(defun write-xarray (xarray range &key (accessor 'value2))
+  (let ((rearranged (rearrange xarray)))
+    (with-range (range left top right bottom)
+      (cclet* ((wsheet #~('worksheet range)))
+        (setf #~(accessor (range wsheet left top right top)) (head rearranged)
+              #~(accessor (range wsheet left (1+ top) right bottom)) (body rearranged))))))
+
+
+;;; Find xarray column by header title.
+;;; In order to be able for columns to be identified by header,
+;;; all headers must be non-numerical!
+(defmethod title-xacolumn ((obj xarray) title &key (test #'equalp))
+  (with-slots ((head head))
+      obj
+    (loop for c from 0 below (length head)
+          for v = (svref head c)
+          thereis (and (funcall test title v) c))))
 
 
 ;;; Find xarray column by number, title or Excel letter.
-(defun resolve-xacolumn-designator (designator xarray)
+(defmethod resolve-xacolumn-designator ((obj xarray) designator)
   (assert (or (typep designator 'column-designator)
               (zerop designator))
       (designator)
@@ -598,88 +692,119 @@
   (typecase designator
     (integer designator)
     (keyword (1- (letters-column designator)))
-    (string  (title-xacolumn xarray designator))))
+    (string  (title-xacolumn obj designator))))
+  
+
+;;; General xarray cell accessor.
+(defmethod xaref* ((obj xarray) idx-row column-designator
+                   &key (value nil value-supplied-p) (if-column-exceeds-limit :ignore))
+  (block xaref-body
+    (with-slots ((body body) (index index)) obj
+      (let ((column (resolve-xacolumn-designator obj column-designator))
+            (row    (svref index idx-row)))
+        (when (>= column (array-dimension body 1))
+          (case if-column-exceeds-limit
+            (:error  (error "Column index ~a exceeds body width of xarray ~a." column obj))
+            (:ignore (return-from xaref-body))))
+        (if value-supplied-p
+          (setf (aref body row column) value)
+          (aref body row column))))))
+
+(defun xaref (xarray idx-row column-designator)
+  (xaref* xarray idx-row column-designator))
+
+(defun (setf xaref) (value xarray idx-row column-designator)
+  (xaref* xarray idx-row column-designator :value value))
+  
+
+;;; Column accessor for 1-row xarray.
+(defmethod xcref ((obj xarray) column-designator)
+  (xaref* obj 0 column-designator))
 
 
-;;; Extract (indexed) ROW from XARRAY.
-(defun xarow (xarray row &optional (index nil))
-  (let* ((width  (array-dimension xarray 1))
-         (result (make-array (list 2 width)))
-         (r      (if index (svref index row) row)))
-    (loop for c from 0 below width doing
-          (setf (aref result 0 c)
-                (aref xarray 0 c)
-                (aref result 1 c)
-                (aref xarray r c)))
-    result))
+;;; Create new xarray containing only selected rows from XARRAY.
+#|(defmethod xarows ((obj xarray) (rows vector))
+  (with-slots ((head head)) obj
+    (let* ((height    (length rows))
+           (width     (length head))
+           (new-body  (make-array (list height width)))
+           (new-index (raw-index new-body)))
+      (loop for r from 0 below height doing
+            (loop for c from 0 below width doing
+                  (setf (aref new-body r c) 
+                        (xaref obj r c))))
+      (make-instance 'xarray
+                     :head head
+                     :body new-body
+                     :index new-index))))|#
+(defmethod xarows ((obj xarray) (rows vector))
+  (with-slots ((index index)) obj
+    (let ((new-index (loop for i across rows collecting
+                           (svref index i))))
+      (make-instance 'xarray
+                     :head (head obj)
+                     :body (body obj)
+                     :index (coerce new-index 'simple-vector)))))
 
 
-;;; Indexes xarray reference (reading only).
-(defun xacell (xarray column-designator &optional (row 1) (index nil))
-  (let ((r (if index (svref index (1- row)) row))
-        (c (resolve-xacolumn-designator column-designator xarray)))
-    (aref xarray r c)))
+;;; Create new xarray containing only selected row from XARRAY.
+#|(defmethod xarows ((obj xarray) (row integer))
+  (with-slots ((head head)) obj
+    (let* ((width    (length head))
+           (new-body (make-array (list 1 width))))
+      (loop for c from 0 below width doing
+            (setf (aref new-body 0 c)
+                  (xaref obj row c)))
+      (make-instance 'xarray
+                     :head head
+                     :body new-body
+                     :index #(0)))))|#
+(defmethod xarows ((obj xarray) (row integer))
+  (make-instance 'xarray
+                 :head (head obj)
+                 :body (body obj)
+                 :index (make-array 1 :initial-contents (list (svref (index obj) row)))))
 
 
-;;; Iterate over (indexed) xarray rows.
-(defmacro do-xarows ((current row xarray &optional (index nil)) &body body)
-  (let ((width (gensym))
-        (i     (gensym)))
-    `(let* ((,width   (array-dimension ,xarray 1))
-            (,current (make-array (list 2 ,width))))
-       ;; Filling in the header
-       (loop for c from 0 below ,width doing
-             (setf (aref ,current 0 c)
-                   (aref ,xarray 0 c)))
-       ;; Helper function for filling CURRENT with the current row's values 
-       (flet ((fill-in (,i)
-                (loop for c from 0 below ,width doing
-                      (setf (aref ,current 1 c)
-                            (aref ,xarray ,i c)))))
-         (if ,index
-           ;; If INDEX provided, iterate over it
-           (loop for ,row across ,index doing
-                 (fill-in ,row)
-                 ,@body)
-           ;; Otherwise, iterate over every row
-           (loop for ,row from 1 below (array-dimension ,xarray 0) doing
-                 (fill-in ,row)
-                 ,@body))))))
+;;; Iterate over the indexed rows of XARRAY.
+(defmacro do-xarows ((row row-number xarray) &body body)
+  (let ((height (gensym)))
+    `(let ((,height (length (index ,xarray))))
+       (loop for ,row-number from 0 below ,height
+             for ,row = (xarows ,xarray ,row-number) doing
+             ,@body))))
 
 
-;;; Create an index vector containing row selected by SELECTOR-FN.
-(defun xaselect (xarray selector-fn &optional (previous-index nil))
-  (let ((rowlist '()))
-    (do-xarows (current row xarray previous-index)
-      (when (funcall selector-fn current)
-        (push row rowlist)))
-    (when rowlist
-      (coerce (nreverse rowlist) 'simple-vector))))
-
-
-#|(defmacro with-xaselection ((selection xarray selector-fn &optional previous-selection) &body body)
-  `(let ((,selection (select-xarows ,xarray ,selector-fn ,previous-selection)))
-     ,@body))|#
+;;; Return a copy of OBJ indexed according to SELECTOR-FN.
+(defmethod xaselect ((obj xarray) selector-fn)
+  (with-slots ((head head) (body body) (index index)) obj
+    (let ((new-index '()))
+      (do-xarows (row r obj)
+        (when (funcall selector-fn row)
+          (push (svref index r) new-index)))
+      (make-instance 'xarray
+                     :head  head
+                     :body  body
+                     :index (coerce (nreverse new-index) 'simple-vector)))))
 
 
 ;;; Extract unique values from designated column.
-(defun xauniques (xarray column-designator &key (test #'equalp) (index nil))
-  (let ((values '())
-        (column (resolve-xacolumn-designator column-designator xarray)))
+(defmethod xauniques ((obj xarray) column-designator &key (test #'equalp))
+  (let ((accumulator '()))
     ;; Collecting all column values
-    (do-xarows (current row xarray index)
-      (push (xacell current column) values))
+    (do-xarows (row r obj)
+      (push (xcref row column-designator) accumulator))
     ;; Dropping duplicates
-    (when values
+    (when accumulator
       (coerce (nreverse
-               (remove-duplicates values :test test))
+               (remove-duplicates accumulator :test test))
               'simple-vector))))
-           
+
 
 ;;; Iterate over unique values in designated column.
-(defmacro xadouniques ((val xarray column-designator &key (test #'equalp) (selection nil)) &body body)
+(defmacro xadouniques ((val xarray column-designator &optional (test 'equalp)) &body body)
   (let ((uniques (gensym)))
-    `(let ((,uniques (xauniques ,xarray ,column-designator :test ,test :selection ,selection)))
+    `(let ((,uniques (xauniques ,xarray ,column-designator :test #',test)))
        (loop for ,val across ,uniques doing
              ,@body))))
 
@@ -690,16 +815,16 @@
       record
     (declare (ignore sorting))
     `(funcall ,equality
-              (xacell a ,column-designator)
-              (xacell b ,column-designator))))
+              (xcref a ,column-designator)
+              (xcref b ,column-designator))))
 
 (defun xapred-curr (record)
   (destructuring-bind (column-designator sorting &optional (equality nil))
       record
     (declare (ignore equality))
     `(funcall ,sorting
-              (xacell a ,column-designator)
-              (xacell b ,column-designator))))
+              (xcref a ,column-designator)
+              (xcref b ,column-designator))))
 
 (defun xapred-and (records)
   (if (second records)
@@ -714,35 +839,23 @@
                      result))
     (append '(or) result)))
   
-;;; Predicate generator for XASORT.
+;;; Predicate generator for XASORT, e.g.
+;;;     (xapred ("TK"    #'string<  #'string=)
+;;;             ("SZK"   #'string<  #'string=)
+;;;             ("SZTSZ" #'string<=))
 (defmacro xapred (&rest records)
   `(lambda (a b)
      ,(xapred-or records)))
 
-;;; Create new sorted index according to PREDICATE.
-(defun xasort (xarray predicate &optional (previous-index nil))
-  (let ((seq (or (copy-seq previous-index)
-                 (coerce (loop for i from 0 below (1- (array-dimension xarray 0))
-                               collecting i)
-                         'simple-vector))))
-    (sort seq #'(lambda (a b)
-                  (funcall predicate
-                           (xarow xarray a previous-index)
-                           (xarow xarray b previous-index))))))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+;;; Return a copy of OBJ with a sorted index according to PREDICATE.
+(defmethod xasort ((obj xarray) predicate)
+  (with-slots ((body body) (head head)) obj
+    (let* ((new-index    (raw-index body))
+           (sorted-index (sort new-index #'(lambda (a b)
+                                             (funcall predicate
+                                                      (xarows obj a)
+                                                      (xarows obj b))))))
+      (make-instance 'xarray
+                     :head  head
+                     :body  body
+                     :index sorted-index))))
