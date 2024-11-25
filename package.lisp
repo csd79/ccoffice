@@ -1,4 +1,4 @@
-;;;; -*- Mode: Common-Lisp; Author: denes.cselovszky@gmail.com -*- 
+;;;; -*- Mode#: Common-Lisp; Author#: denes.cselovszky@gmail.com -*- 
                                                                               ;
 
 (in-package #:cl-user)
@@ -14,6 +14,7 @@
            #:print-used-fli-templates
            #:#~
            #:#_
+           #:with-property-accessors
            #:cclet*
            #:excellerate
            #:column->row

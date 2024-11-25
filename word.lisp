@@ -37,26 +37,26 @@
         (update  (gensym)))
     `(cclet* ((,app-obj (or ,app 
                             (cclet* ((global (com:create-object :progid "Word.Application"))
-                                     (app    #~('application global)))
-                              (setf #~('visible app) nil)
+                                     (app    (#~application global)))
+                              (setf (#~visible app) nil)
                               app)))
-              (,docs    #~('documents ,app-obj))
+              (,docs    (#~documents ,app-obj))
               (,doc-obj (or (when (typep ,use 'com::com-interface) ,use)
                             (when ,open (#_open ,docs ,open nil ,read-only))
                             (#_add ,docs)))
               (,doc     ,doc-obj)
-              (,update  #~('screenupdating ,app-obj)))
+              (,update  (#~screenupdating ,app-obj)))
        (unwind-protect
            (progn
-             (setf #~('screenupdating ,app-obj) nil)
+             (setf (#~screenupdating ,app-obj) nil)
              ,@body)
          (progn 
-           (setf #~('screenupdating ,app-obj) ,update)
+           (setf (#~screenupdating ,app-obj) ,update)
            (when (and ,save (not ,read-only))
              (#_save ,doc))
            (when ,close
-             (setf #~('saved ,doc) t)
-             (setf #~('displayalerts ,app-obj) nil)
+             (setf (#~saved ,doc) t)
+             (setf (#~displayalerts ,app-obj) nil)
              (#_close ,doc)
              (unless ,app
                (#_quit ,app-obj))))))))
@@ -70,31 +70,31 @@
     `(cclet* ((,app2 (if (boundp ',app)
                        ,app
                        (com:create-object :progid "Word.Application")))
-              (docs  #~('documents ,app2))
+              (docs  (#~documents ,app2))
               (,doc  (if ,open-file
                        (#_open docs ,open-file nil ,read-only)
                        (#_add docs))))
        (unwind-protect 
            (progn
-             (setf #~('screenupdating ,app2) nil)
+             (setf (#~screenupdating ,app2) nil)
              ,@body)
          (progn 
-           (setf #~('screenupdating ,app2) t)
+           (setf (#~screenupdating ,app2) t)
            (when (and ,save (not ,read-only))
              (#_save ,doc))
            (when ,close
-             (setf #~('saved ,doc) t)
+             (setf (#~saved ,doc) t)
              (#_close ,doc)
              (unless (boundp ',app)
                (#_quit ,app2))))))))|#
 
 
 (defun begining-of-doc (document)
-  #~('first #~('characters document)))
+  (#~first (#~characters document)))
 
 
 (defun end-of-doc (document)
-  #~('last #~('characters document)))
+  (#~last (#~characters document)))
 
 
 ;;; ----------------------------------------------------------------------
@@ -111,11 +111,11 @@
   
 
 (defun range-find-text (range text)
-  (cclet* ((find #~('find range)))
+  (cclet* ((find (#~find range)))
     (#_execute find (trim-text text) nil nil nil nil nil t
                +wd-find-continue+ nil)
-    (when #~('found find)
-      #~('start range))))
+    (when (#~found find)
+      (#~start range))))
   
 
 (defun carriage-return (string)
@@ -130,8 +130,8 @@
 
 (defun selection-overwrite (range start end text)
   (#_select range)
-  (cclet* ((document  #~('document range))
-           (selection #~('selection #~('activewindow document)))
+  (cclet* ((document  (#~document range))
+           (selection (#~selection (#~activewindow document)))
            (text2     (if (string= text "")
                         " "
                         text)))
@@ -142,10 +142,10 @@
 
 
 (defun footer (document section type)
-  #~('range (#_item #~('footers (#_item #~('sections document) section))
+  (#~range (#_item (#~footers (#_item (#~sections document) section))
                            type)))
 
 
 (defun header (document section type)
-  #~('range (#_item #~('headers (#_item #~('sections document) section))
+  (#~range (#_item (#~headers (#_item (#~sections document) section))
                            type)))

@@ -8,7 +8,7 @@
 ;;; Sandbox
 
 
-(defun h ()
+#|(defun h ()
   (with-workbook (:open "c:\\Users\\cselovszkid\\Desktop\\Ample Controls.xlsx"
                   :wsvars (wsheet) :save t :close t)
     (cclet* ((write  (range wsheet 1 100 1 105))
@@ -22,11 +22,11 @@
       (apply-style (font (range wsheet 1 11 1 14)) '(:bold))
       ;; Print formula & value.
       (format t "~a   =   ~a~%"
-              (xcell wsheet 8 2 :prop 'formula)
-              (xcell wsheet 8 2 :prop 'value))
+              (xcell wsheet 8 2 :prop #'#~formula)
+              (xcell wsheet 8 2 :prop #'#~value))
       ;; Set formulas
-      (setf (xrange wsheet 2 2 4 4 :prop 'formula) "=\"\"")
-      (setf (xcell wsheet 8 8 :prop 'formula) "=8*8")
+      (setf (xrange wsheet 2 2 4 4 :prop #'#~formula) "=\"\"")
+      (setf (xcell wsheet 8 8 :prop #'#~formula) "=8*8")
       )))
 
 
@@ -34,7 +34,7 @@
   (with-workbook (:open "c:\\Users\\cselovszkid\\Downloads\\EXPORT_kinevezés.XLSX"
                   :wsvars (in) :close t :read-only t)
     (with-used-range (in l u r b)
-      (xrange in l u r b :prop 'value))))
+      (xrange in l u r b :prop #'#~value))))
 
 
 (defun k ()
@@ -74,18 +74,6 @@
                 (xcref row "SZTSZ"))))))
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 (defun m (wb)
   (with-workbook (:use wb :wsvars (in))
     (let* ((xarray (read-xarray (used-range in)))
@@ -102,9 +90,6 @@
   (with-workbook (:wbook w :open "c:\\Users\\cselovszkid\\Downloads\\EXPORT_kinevezés.XLSX"
                   :close t :read-only t)
     (m w)))
-
-
-
 
 
 (defun p ()
@@ -136,5 +121,21 @@
             (push r tesi-found))))
       (values
        (remove-duplicates (nreverse enek-found))
-       (remove-duplicates (nreverse tesi-found))))))
+       (remove-duplicates (nreverse tesi-found))))))|#
 
+
+(defun q ()
+  (with-property-accessors 
+    (cclet* ((global  (com:create-object :progid "Excel.Application"))
+             (app     (#~application global))
+             (wbooks  (#~workbooks app))
+             (wbook   (#_open wbooks "c:\\Users\\cselovszkid\\Desktop\\Ample Controls.xlsx"))
+             (wsheets (#~worksheets wbook))
+             (wsheet  (#~item wsheets 1))
+             (range   (#~range wsheet "B1")))
+;      (print (#~value2 range))
+      (setf (#~visible app) nil)
+      (setf (#~value2 range) "P")
+      (print (#~value2 range))   
+      (#_close wbook)
+      (#_quit app))))
