@@ -12,19 +12,25 @@
            #:with-com-initialized
            #:file-in-dir
            #:print-used-fli-templates
-           #:#~
-           #:#_
+           #:?
+           #:!
+           #:property-accessors-on
            #:with-property-accessors
            #:cclet*
            #:excellerate
            #:column->row
-           #:excel-value-as-number
+           #:excel-value-as-number ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+           #:parse-string
+           #:parse-number
            #:freeze-panes
            #:range
            #:with-used-range
            #:used-range
            #:last-row
            #:with-range
+           #:delete-rows
+           #:delete-columns
+           #:empty-cell-p
            #:copy-formatting
            #:autofit-cols
            #:font
@@ -59,6 +65,10 @@
            #:xaselect
            #:xauniques
            #:xadouniques
+           #:xarray-width
+           #:xarray-actual-height
+           #:xarray-indexed-height
+           #:xarray-zero-index-p
            #:xapred
            #:xasort
            #:+wd-section-break-next-page+
@@ -68,6 +78,9 @@
            #:+wd-header-footer-first-page+
            #:+wd-header-footer-primary+
            #:+wd-align-page-number-center+
+           #:+wd-format-pdf+
+           #:+wd-header-footer-even-pages+
+           #:+wd-align-paragraph-center+
            #:with-document
            #:begining-of-doc
            #:end-of-doc
@@ -75,4 +88,5 @@
            #:carriage-return
            #:selection-overwrite
            #:footer
-           #:header))
+           #:header
+           #:copy-via-fragment))

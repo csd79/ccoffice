@@ -22,10 +22,10 @@
   (let* ((input-files (directory (concatenate 'string *input-directory* "*.xls*")))
          (input-files-sorted (sort input-files #'string< :key #'namestring)))
     (cclet* ((excel    (com:create-object :progid "Excel.Application"))
-             (wbooks   #p(workbooks excel))
-             (wbook    #m(add wbooks))
-             (wsheets  #p(worksheets wbook))
-             (wsheet   #p(item wsheets 1))
+             (wbooks   (?workbooks excel))
+             (wbook    (!add wbooks))
+             (wsheets  (?worksheets wbook))
+             (wsheet   (?item wsheets 1))
              (dest-row 2))
       (unwind-protect
           (progn
@@ -47,7 +47,7 @@
                           ;; Ha a bérelem benne van *BEK*-ben és a háttere nem színes:
                           (when
                               (and (member (svref idx i) *bek* :test #'string=)
-                                   (= #p(colorindex #p(interior (range wsheet-in 3 row))) -4142))
+                                   (= (?colorindex (?interior (range wsheet-in 3 row))) -4142))
                             ;; Sor másolása
                             (setf (xrange wsheet 1 dest-row right dest-row)
                                   (xrange wsheet-in 1 row right row))
@@ -56,7 +56,7 @@
                   (format t "~%~a~%" dest-row))))
             (autofit-cols wsheet)
             (freeze-panes wsheet 5 1)
-            #m(saveas wbook (concatenate 'string (namestring *input-directory*) "hihi.xlsx")))
+            (!saveas wbook (concatenate 'string (namestring *input-directory*) "hihi.xlsx")))
         (progn
-          #m(close wbook)
-          #m(quit excel))))))|#
+          (!close wbook)
+          (!quit excel))))))|#

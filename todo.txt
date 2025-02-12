@@ -3,6 +3,18 @@
 
 
 
+
+
+
+
+(xauniques query "SZTSZ" :test #'astring=)
+Ha az SZTSZ-t számmá alakítják...
+Összehasonlító függvények, amik képesek lazán kezelni az Excel általános típust?
+
+
+
+
+
 With (SETF (XRANGE...)), if I change prop to 'value, seemingly no value is accepted. With 'formula, it writes TRUE to the designated cells.
 
 Használja a vágólapot:

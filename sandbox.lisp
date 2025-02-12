@@ -17,16 +17,16 @@
       (with-used-range (wsheet left top right bottom)
         (format t "left: ~a, top: ~a, right: ~a, bottom: ~a~%" left top right bottom))
       (copy-formatting source dest)
-      (setf #~('value2 write) "Grr")
+      (setf ?('value2 write) "Grr")
       (apply-style (range wsheet 2 10 2 14) '(:border))
       (apply-style (font (range wsheet 1 11 1 14)) '(:bold))
       ;; Print formula & value.
       (format t "~a   =   ~a~%"
-              (xcell wsheet 8 2 :prop #'#~formula)
-              (xcell wsheet 8 2 :prop #'#~value))
+              (xcell wsheet 8 2 :prop #'?formula)
+              (xcell wsheet 8 2 :prop #'?value))
       ;; Set formulas
-      (setf (xrange wsheet 2 2 4 4 :prop #'#~formula) "=\"\"")
-      (setf (xcell wsheet 8 8 :prop #'#~formula) "=8*8")
+      (setf (xrange wsheet 2 2 4 4 :prop #'?formula) "=\"\"")
+      (setf (xcell wsheet 8 8 :prop #'?formula) "=8*8")
       )))
 
 
@@ -34,7 +34,7 @@
   (with-workbook (:open "c:\\Users\\cselovszkid\\Downloads\\EXPORT_kinevezés.XLSX"
                   :wsvars (in) :close t :read-only t)
     (with-used-range (in l u r b)
-      (xrange in l u r b :prop #'#~value))))
+      (xrange in l u r b :prop #'?value))))
 
 
 (defun k ()
@@ -124,18 +124,204 @@
        (remove-duplicates (nreverse tesi-found))))))|#
 
 
-(defun q ()
+#|(defun q ()
   (with-property-accessors 
-    (cclet* ((global  (com:create-object :progid "Excel.Application"))
-             (app     (#~application global))
-             (wbooks  (#~workbooks app))
-             (wbook   (#_open wbooks "c:\\Users\\cselovszkid\\Desktop\\Ample Controls.xlsx"))
-             (wsheets (#~worksheets wbook))
-             (wsheet  (#~item wsheets 1))
-             (range   (#~range wsheet "B1")))
-;      (print (#~value2 range))
-      (setf (#~visible app) nil)
-      (setf (#~value2 range) "P")
-      (print (#~value2 range))   
-      (#_close wbook)
-      (#_quit app))))
+    (unwind-protect
+        (progn
+          (cclet* ((global  (com:create-object :progid "Excel.Application"))
+                   (app     (?application global))
+                   (wbooks  (?workbooks app))
+                   (wbook   (!open wbooks "c:\\Users\\cselovszkid\\Desktop\\Ample Controls.xlsx"))
+                   (wsheets (?worksheets wbook))
+                   (wsheet  (?item wsheets 1))
+                   (range   (?range wsheet "B1")))
+            (print (?value2 range))
+            (setf (?visible app) nil)
+            (setf (?value2 range) "P")
+            (print (?value2 range))   
+            (!close wbook)
+            (!quit app)))
+      (print "LIBA!"))))|#
+
+
+;;; ----------------------------------------------------------------------
+;;; Splt strikes back
+
+
+(defparameter *in* "C:\\Users\\cselovszkid\\Downloads\\2024.11.29. Splt strikes back\\_TK_Adatok szerzõdéshez.xlsx")
+(defparameter *out* "C:\\Users\\cselovszkid\\Downloads\\2024.11.29. Splt strikes back\\out\\")
+
+
+
+(defun route-number (number current-range)
+  (if (and current-range (= (1+ (second current-range)) number))
+    (values (list (first current-range) number) nil)
+    (values current-range (list number number))))
+
+(defun find-ranges (list)
+  (let* ((car (car list))
+         (first-range (list car car)))
+    (if (= (length list) 1)
+      (list first-range)
+      (let ((result '())
+            (current-range first-range))
+        (dolist (i (rest list))
+          (multiple-value-bind (old new)
+              (route-number i current-range)
+            (if new
+              (progn
+                (push old result)
+                (setf current-range new))
+              (setf current-range old))))
+        (push current-range result)))))
+;        (nreverse result)))))
+
+(defun delete-rows-unless (wsheet selector &key (start 2) (end nil))
+  (with-used-range (wsheet left top right bottom)
+    (let* ((y1 (max top (1- start)))
+           (y2 (if end (min end bottom) bottom))
+           (xarray (read-xarray (range wsheet left y1 right y2)))
+           (negatives '()))
+      (do-xarows (row r xarray)
+        (unless (funcall selector row)
+          (push (+ r start) negatives)))
+      (when negatives
+        (let ((ranges (sort (find-ranges (nreverse negatives)) #'> :key #'first)))
+          (dolist (range ranges)
+            (destructuring-bind (start end) range
+              (delete-rows wsheet start end))))))))
+
+
+
+(defun ssb ()
+  (with-property-accessors
+    (with-workbook (:open *in* :wsvars (form) :read-only nil :save t :close t)
+      (!saveas form (concatenate 'string *out* "Szegedi TK" " - Adatok szerzõdéshez.xlsx"))
+      (delete-rows-unless form #'(lambda (row)
+                                   (string= (xcref row 0) "Szegedi Tankerületi Központ"))
+                          :start 3))))
+#|
+
+Most ezt egy ciklusba, uniques @ tks
+  
+  |#
+
+
+;;; ----------------------------------------------------------------------
+;;; Sandbox #2
+
+
+(defparameter *kl* "C:\\Users\\cselovszkid\\Downloads\\laptop helyett.xlsx")
+
+(defun w ()
+  (let ((ccom::*property-accessors-on* t))
+    (with-property-accessors
+      (with-workbook (:open *kl* :wsvars (data) :save t :close t)
+;        (setf (xcell data 4 15) (xcell data 2 2))
+        (setf (xrange data 4 15 6 17) (xrange data 2 2 4 4))
+        ))))
+
+
+;;; ----------------------------------------------------------------------
+;;; Sandbox #2
+
+;(defparameter *fx* "c:\\Users\\cselovszkid\\Downloads\\___\\…._TK_Iktatószámok iratgeneráláshoz.xlsx")
+;(defparameter *fx* "c:\\Users\\cselovszkid\\Downloads\\___\\Adatszolgáltatás_legmagasabb illetménnyel rendelkezõ pedagógusok.xlsx")
+
+#|(defun splt2 (file title)
+  (with-property-accessors
+    (setf (property-accessors-on) t)
+    (with-workbook (:wbook wbook :open file :wsvars (ws1) :save t :close t)
+      (cclet* ((last-row   (last-row ws1))
+               (column     (title-column ws1 title))
+               (raw        (?value2 (range ws1 column 2 column last-row)))
+               (list       (loop for i from 0 below (array-dimension raw 0) collecting (aref raw i 0)))
+               (categories (remove-duplicates list :test #'string=))
+               (sheets     (?worksheets wbook))
+               (index      0))
+        (dolist (categorie categories)
+;          (cclet* ((new-ws (wsselect ws1 `((,title ,categorie)) :paste-all t :paste-column-widths t)))
+          (cclet* ((new-ws (xselect> ws1 `((,title ,categorie)) :paste-all t :paste-column-widths t)))
+            (!select new-ws)
+            (!copy new-ws (?item sheets (incf index)))
+            (setf (?name (?item sheets index)) (concatenate 'string (first (str:words categorie)) " TK"))
+            (print categorie))))))
+  (print "OK"))|#
+
+
+;;; ----------------------------------------------------------------------
+;;; Sandbox #3: not my type
+
+
+(defparameter *a* "c:\\Users\\cselovszkid\\Desktop\\teszt.xlsx")
+
+
+(defun xl-error-p (value2)
+  "Is VALUE2 an errorcode, and if it is, what error does it stands for?"
+  (and (integerp value2)
+       (cdr (assoc value2 '((-2146826259 . :name) (-2146826281 . :div/0) (-2146826265 . :ref)
+                            (-2146826252 . :num)  (-2146826246 . :n/a)   (-2146826273 . :value)
+                            (-2146826288 . :null))))))
+
+
+(defun xl-spill-range (range)
+  (cclet* ((spillparent (?spillparent range)))
+    (unless (eq spillparent :empty)
+      (?spillingtorange spillparent))))
+
+
+
+; felesleges opcionális paraméterek :NOT-SPECIFIED
+
+
+#|
+  A XARRAY-t ki lehetne egészíteni egy TEXT réteggel, ami szintén egyben olvasható, de nem írható.
+  Ez mindig az Excel beállított számformátum szerinti formában adja vissza az értéket.
+
+  Érdekes módon ha a range 1 cella, a value2 nem tesz különbséget a hamis értéket tartalmazó és
+  az üres cella értéke között (NIL).
+  Viszont ha a range több cella (és az eredmény tömb) akkor az üres cella :EMPTY.
+
+  Tehát érdemes lenne MINDIG tömböt lekérni.
+
+  Ennek általánosítására átalakíthatnánk a cella-accessor függvényeket hogy közvetlenül megadható
+  legyen a ws és sarkok.
+  Ha csak egy sarok van, akkor azt küldje el a köv. paraméternek is.
+  És legyen még két KEY: :single-cell-as-value és :column-as-vector
+
+  Egyébként a XA és sima táblakezelõ függvényeket egységesíteni kéne, akár metódusként!!!!!!
+  
+  |#
+
+
+
+
+(defun b (&optional (r 5))
+  (with-property-accessors
+    (setf (property-accessors-on) t)
+    (with-workbook (:open *a* :wsvars (ws1 ws2) :save nil :close t)
+#|      ;; Hibakódok
+      (loop for row from 1 upto 8 doing
+            (print (xl-error-p (?value2 (range ws1 1 row)))))|#
+      ;; Üres cellák
+;      (loop for row from 10 upto 13 doing
+;            (multiple-value-bind (&rest all)
+;                (?value2 (range ws1 1 row))
+;              (print all)))
+            (print (!value2 (range ws1 1 10 1 13))))
+#|      ;; Értékek
+      (loop for col from 1 upto 13 doing
+            (print (?text (range ws2 col r))))|#
+#|      ;; Dinamikus tömb
+      (loop for col from 1 upto 13 doing
+            (print (?formulaarray (range ws2 col 14))))
+      (loop for col from 1 upto 13 doing
+            (print (?value (range ws2 col 14))))|#
+;      (print (?numberformat (range ws2 1 4 13 4))) ; Ha egyformat, formátum, különben :NULL
+;      (print (?numberformat (range ws2 3 3 3 18)))
+
+;      (print (?spillingtorange (range ws2 2 14)))
+;      (print (?spillparent (range ws2 4 4)))
+;      (print (?text (xl-spill-range (range ws2 5 17)))) ; Spillrange-re a TEXT valamiért nem mûködik.
+;      (print (?value2 (xl-spill-range (range ws2 2 16))))
+      ))

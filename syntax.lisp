@@ -5,8 +5,15 @@
 
 
 #|
-Comparison:
+VBA:
+Workbooks = Global.Workbooks
+Workbook  = Workbooks.Add(template := xlWorksheet)
+Worksheet = Workbook.Worksheets(1)
+Print(Worksheet.Range("A1"))
+Worksheet.Name = "New Name"
 
+
+LW:
 (com:with-temp-interface (workbook)
     (com:with-temp-interface (workbooks)
         (com:invoke-dispatch-get-property global "Workbooks")
@@ -22,14 +29,12 @@ Comparison:
              ||     ||     ||
              \/     \/     \/
 
-(cclet* ((workbooks (#~workbooks global))             ; value of property 'workbooks' of object 'global'
-         (workbook  (#_add workbooks +xl-worksheet+)) ; method 'add' on object 'workbooks' with arg '+xl-worksheet+'
-         (sheets    (#~worksheets workbook))
-         (worksheet (#~item sheets 1))                ; value of property 'item' of object 'sheets' with arg '1'
-         (address   "A1")                             ; plain string
-         (range     (#~range worksheet address)))
-  (print (#~value2 range))
-  (setf (#~name worksheet) "New name"))               ; modify value of property 'name' of object 'worksheet'
+(cclet* ((workbooks (?workbooks global))
+         (workbook  (!add workbooks +xl-worksheet+))
+         (worksheet (?item (?worksheets workbook) 1))
+         (address   "A1"))
+  (print (?value2 (?range worksheet address)))
+  (setf (?name worksheet) "New name"))
 |#
 
 
@@ -37,71 +42,105 @@ Comparison:
 ;;; COM property and method calls
 
 
-(defpackage #:ccom-accessors)
-
+;(make-package :ccom-accessors :use nil)
 
 ;;; COM 'get property' read macro.
 (eval-when (:load-toplevel :compile-toplevel :execute)
-  (defun com-property-reader (stream sub-char infix)
-    (declare (ignore sub-char infix))
-    (let* ((prop      (read stream t nil t))
-           (prop-name (symbol-name prop)))
-;      (intern (symbol-name prop) :ccom-accessors))))
-      (shadow prop-name :ccom-accessors) ; INTERN wouldn't work if symbol with same name existed in the CL::
-      (find-symbol prop-name :ccom-accessors))))
+  (defparameter *ccom-accessor-refix* "CCOM-ACCESSOR-")
 
-(set-dispatch-macro-character #\# #\~ #'com-property-reader)
+  (defun intern-ccom-accessor (property-name package)
+    (let ((symbol-name (string-upcase (concatenate 'string *ccom-accessor-refix* property-name))))
+      (shadow symbol-name package)
+      (find-symbol symbol-name package)))
 
+  (defun decompose-lw-setf-symbol (string)
+    (let* ((start 0)
+           (quotes (loop for i from 0 below 4
+                         for new = (position #\" string :test #'char= :start start)
+                         when new do (setf start (1+ new))
+                         when new collect new)))
+      (when (= (length quotes) 4)
+        (list (subseq string (1+ (first quotes)) (second quotes))
+              (subseq string (1+ (third quotes)) (fourth quotes))))))
+  
+  (defun error-symbol (error)
+    (let ((datum (cell-error-name error)))
+      (cond ((symbolp datum)
+             (let ((symbol-name (symbol-name datum)))
+               (if (find #\" symbol-name :test #'char=)
+                 ;; 'SETF::\"CCOM\"\ \"VALUE2\"
+                 (append (decompose-lw-setf-symbol symbol-name)
+                         (list 'setf))
+                 ;; 'VALUE2
+                 (list (package-name (symbol-package datum))
+                       (symbol-name datum)
+                       nil))))
+            ;; '(SETF VALUE2)
+            ((and (listp datum)
+                  (= (length datum) 2)
+                  (eql (first datum) 'setf))
+             (list (package-name (symbol-package (second datum)))
+                   (symbol-name (second datum))
+                   'setf))
+            (t (list nil nil)))))
+
+  (set-macro-character
+   #\?
+   (lambda (stream char)
+     (declare (ignore char))
+     (let* ((prop      (read stream t nil t))
+            (prop-name (symbol-name prop)))
+       (intern-ccom-accessor prop-name *package*)))))
+
+
+(defparameter *property-accessors-on* nil)
+
+(defun property-accessors-on ()
+  *property-accessors-on*)
+
+(defun (setf property-accessors-on) (value)
+  (setf *property-accessors-on* (not (not value))))
 
 (defmacro with-property-accessors (&body body)
-  `(catch 'accessor-ready
-     (handler-bind ((undefined-function
-                     #'(lambda (error)
-                         (let* ((datum  (cell-error-name error))
-                                (symbol (cond ((symbolp datum) datum)
-                                              ((and (listp datum)
-                                                    (= (length datum) 2)
-                                                    (eql (first datum) 'setf))
-                                               (second datum))
-                                              (t nil))))
-                           (when symbol
-                             (let* ((symbol-name  (symbol-name symbol))
-                                    (package      (symbol-package symbol))
-                                    (package-name (package-name package))
-                                    (setter-name  (concatenate 'string "SET-" symbol-name)))
-                               (when (string= package-name "CCOM-ACCESSORS")
-                                 (let ((setter-symbol (intern setter-name package-name))
-                                       (getter-func   #'(lambda (obj &rest args)
-                                                          (apply #'com:invoke-dispatch-get-property
-                                                                 obj symbol-name args)))
-                                       (setter-func   #'(lambda (value obj &rest args)
-                                                          (apply #'com:invoke-dispatch-put-property
-                                                                 obj symbol-name
-                                                                 (nconc args (list value))))))
-                                   (setf (fdefinition symbol) getter-func
-                                         (fdefinition setter-symbol) setter-func
-                                         (fdefinition `(setf ,symbol)) (fdefinition setter-symbol))
-                                   (invoke-restart (find-restart 'use-value error)
-                                                   (if (symbolp datum)
-                                                     getter-func
-                                                     setter-func))))))))))
-;                               (continue)))))))
-;                               (throw 'accessor-ready getter-func)))))))
-       ,@body)))
-
-
-
+  `(handler-bind
+       ((undefined-function
+         #'(lambda (error)
+             (when *property-accessors-on*
+               (destructuring-bind (package-name symbol-name type)
+                   (error-symbol error)
+                 (when (and symbol-name
+                            (> (length symbol-name) 15)
+                            (string= (subseq symbol-name 0 14) *ccom-accessor-refix*))
+                   (let* ((property-name   (subseq symbol-name 14))
+                          (property-setter (concatenate 'string "SET-" property-name))
+                          (getter-symbol   (intern-ccom-accessor property-name package-name))
+                          (setter-symbol   (intern-ccom-accessor property-setter package-name))
+                          (getter-func     #'(lambda (obj &rest args)
+                                               (apply #'com:invoke-dispatch-get-property
+                                                      obj property-name args)))
+                          (setter-func     #'(lambda (value obj &rest args)
+                                               (apply #'com:invoke-dispatch-put-property
+                                                      obj property-name
+                                                      (nconc args (list value))))))
+                     (setf (fdefinition getter-symbol) getter-func
+                           (fdefinition setter-symbol) setter-func
+                           (fdefinition `(setf ,getter-symbol)) (fdefinition setter-symbol))
+                     (invoke-restart (find-restart 'use-value error)
+                                     (if (eq type 'setf)
+                                       setter-func
+                                       getter-func)))))))))
+     ,@body))
 
 
 ;; COM 'method call' read macro.
 (eval-when (:load-toplevel :compile-toplevel :execute)
-  (defun com-method-reader (stream sub-char infix)
-    (declare (ignore sub-char infix))
-    (let ((method (read stream t nil t)))
-      `(lambda (obj &rest rest)
-         (apply #'com:invoke-dispatch-method obj (symbol-name ',method) rest)))))
-
-(set-dispatch-macro-character #\# #\_ #'com-method-reader)
+  (set-macro-character
+   #\!
+   (lambda (stream char)
+     (declare (ignore char))
+     (let ((method (read stream t nil t)))
+       `(lambda (obj &rest rest)
+          (apply #'com:invoke-dispatch-method obj (symbol-name ',method) rest))))))
 
 
 ;;; ----------------------------------------------------------------------
