@@ -4,23 +4,18 @@
 (in-package #:cl-user)
 
 
-(defpackage #:ccom
-  (:use #:cl #:achar)
+(defpackage #:ccoffice
+  (:use #:cl #:achar #:ccom4)
   (:export #:column
            #:cell-index
            #:letters-column
-           #:with-com-initialized
+;           #:with-com-initialized
            #:file-in-dir
            #:print-used-fli-templates
-           #:?
-           #:!
-           #:property-accessors-on
-           #:with-property-accessors
-           #:cclet*
            #:excellerate
            #:column->row
            #:excel-value-as-number ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-           #:parse-string
+           #:parse-string/
            #:parse-number
            #:freeze-panes
            #:range
@@ -31,6 +26,7 @@
            #:delete-rows
            #:delete-columns
            #:empty-cell-p
+           #:empty-cell
            #:copy-formatting
            #:autofit-cols
            #:font
@@ -53,12 +49,17 @@
            #:with-xselection
            #:excel-date
            #:excel-date-string
+           #:date-to-excel-serial
+           #:xarray
+           #:head
+           #:body
            #:index
            #:read-xarray
            #:make-xarray
            #:rearrange
            #:write-xarray
            #:xaref
+           #:xaref-head
            #:xcref
            #:xarows
            #:do-xarows
@@ -89,4 +90,8 @@
            #:selection-overwrite
            #:footer
            #:header
-           #:copy-via-fragment))
+           #:copy-via-fragment
+           #:+ol-mail-item+
+           #:+ol-by-value+
+           #:outlook-running-p
+           #:new-mail))

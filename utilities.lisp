@@ -1,7 +1,7 @@
 ;;;; -*- Mode: Common-Lisp; Author: denes.cselovszky@gmail.com -*- 
                                                                               ;
 
-(in-package #:ccom)
+(in-package #:ccoffice)
 
 
 ;;; ----------------------------------------------------------------------
@@ -45,7 +45,7 @@
     (apply #'+ char-values)))
 
 
-;;; Is COM initialized?
+#|;;; Is COM initialized?
 (defparameter *com-init-count* 0)
 
 
@@ -61,7 +61,7 @@
        (progn
          (setf *com-init-count* orig)
          (when (zerop *com-init-count*)
-           (com::co-uninitialize))))))
+           (com::co-uninitialize))))))|#
 
 
 ;;; Construct new pathname based on DIRECTORY and FILE.

@@ -1,15 +1,15 @@
 (require "automation")
 
-(defsystem "ccom"
-  :description "Wrapper layer for LispWorks 7.1 COM package v2"
+(defsystem "ccoffice"
+  :description "Office automation layer"
   :author      "Denes Cselovszki <denes.cselovszki@gmail.com>"
-  :version     "0.23"
-  :depends-on  ("achar" )
+  :version     "0.24"
+  :depends-on  ("ccom4" "achar" "local-time")
   :serial      t
   :components  ((:file "package")
                 (:file "utilities")
-                (:file "syntax")
                 (:file "excel")
                 (:file "word")
+                (:file "outlook")
                 (:file "ppoint")
                 (:file "sandbox")))

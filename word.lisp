@@ -1,7 +1,8 @@
 ;;;; -*- Mode: Common-Lisp; Author: denes.cselovszky@gmail.com -*- 
                                                                               ;
 
-(in-package #:ccom)
+(in-package #:ccoffice)
+#.(enable-ccom-syntax)
 
 
 ;;; ----------------------------------------------------------------------
@@ -40,37 +41,37 @@
         (update  (gensym)))
     `(cclet* ((,app-obj (or ,app 
                             (cclet* ((global (com:create-object :progid "Word.Application"))
-                                     (app    (?application global)))
-                              (setf (?visible app) nil)
+                                     (app    (?'application global)))
+                              (setf (?'visible app) nil)
                               app)))
-              (,docs    (?documents ,app-obj))
+              (,docs    (?'documents ,app-obj))
               (,doc-obj (or (when (typep ,use 'com::com-interface) ,use)
-                            (when ,open (!open ,docs ,open nil ,read-only))
-                            (!add ,docs)))
+                            (when ,open (!'open ,docs ,open nil ,read-only))
+                            (!'add ,docs)))
               (,doc     ,doc-obj)
-              (,update  (?screenupdating ,app-obj)))
+              (,update  (?'screenupdating ,app-obj)))
        (unwind-protect
            (progn
-             (setf (?screenupdating ,app-obj) nil)
+             (setf (?'screenupdating ,app-obj) nil)
              ,@body)
          (progn 
-           (setf (?screenupdating ,app-obj) ,update)
+           (setf (?'screenupdating ,app-obj) ,update)
            (when (and ,save (not ,read-only))
-             (!save ,doc))
+             (!'save ,doc))
            (when ,close
-             (setf (?saved ,doc) t)
-             (setf (?displayalerts ,app-obj) nil)
-             (!close ,doc)
+             (setf (?'saved ,doc) t)
+             (setf (?'displayalerts ,app-obj) nil)
+             (!'close ,doc)
              (unless ,app
-               (!quit ,app-obj))))))))
+               (!'quit ,app-obj))))))))
 
 
 (defun begining-of-doc (document)
-  (?first (?characters document)))
+  (?'first (?'characters document)))
 
 
 (defun end-of-doc (document)
-  (?last (?characters document)))
+  (?'last (?'characters document)))
 
 
 ;;; ----------------------------------------------------------------------
@@ -85,13 +86,21 @@
       (subseq shorter 0 (- 249 (count #\return shorter))))
     text))
   
+#|(defun identify-my-thread (name)
+  (let ((process (mp:get-current-process)))
+    (format t "~&~a running in process: ~A (ID: ~D)~%" 
+            name
+            (mp:process-name process)
+            (sys:current-thread-unique-id))))|#
+
 
 (defun range-find-text (range text)
-  (cclet* ((find (?find range)))
-    (!execute find (trim-text text) nil nil nil nil nil t
+;  (identify-my-thread "RANGE-FIND-TEXT")
+  (cclet* ((find (?'find range)))
+    (!'execute find (trim-text text) nil nil nil nil nil t
                +wd-find-continue+ nil)
-    (when (?found find)
-      (?start range))))
+    (when (?'found find)
+      (?'start range))))
   
 
 (defun carriage-return (string)
@@ -105,33 +114,36 @@
 
 
 (defun selection-overwrite (range start end text)
-  (!select range)
-  (cclet* ((document  (?document range))
-           (selection (?selection (?activewindow document)))
+  (!'select range)
+  (cclet* ((document  (?'document range))
+           (selection (?'selection (?'activewindow document)))
            (text2     (if (string= text "")
                         " "
                         text)))
-    (!setrange selection start end)
-    (!typetext selection (carriage-return text2))
+    (!'setrange selection start end)
+    (!'typetext selection (carriage-return text2))
     (when (string/= text text2)
-      (!typebackspace selection))))
+      (!'typebackspace selection))))
 
 
 (defun footer (document section type)
-  (?range (!item (?footers (!item (?sections document) section))
+  (?'range (!'item (?'footers (!'item (?'sections document) section))
                            type)))
 
 
 (defun header (document section type)
-  (?range (!item (?headers (!item (?sections document) section))
+  (?'range (!'item (?'headers (!'item (?'sections document) section))
                            type)))
 
 
 (defun copy-via-fragment (from to tempfile)
-  (!exportfragment (?formattedtext from)
+  (!'exportfragment (?'formattedtext from)
                    tempfile
                    +wd-format-document-default+)
-;  (!importfragment to fragment)
+;  (!'importfragment to fragment)
 ;  (delete-file fragment))
-  (!importfragment to tempfile)
+  (!'importfragment to tempfile)
   (delete-file tempfile))
+
+
+#.(disable-ccom-syntax)
