@@ -3,7 +3,7 @@
 (defsystem "ccoffice"
   :description "Office automation layer"
   :author      "Denes Cselovszki <denes.cselovszki@gmail.com>"
-  :version     "0.24"
+  :version     "0.25"
   :depends-on  ("ccom4" "achar" "local-time")
   :serial      t
   :components  ((:file "package")
