@@ -122,11 +122,11 @@
          (cclet* ((,from (range ,worksheet ,left ,top)))
            (cclet* ((,findbtm (!'find ,whole "*" ,from +xl-values+
                                       +xl-whole+ +xl-by-rows+ +xl-previous+)))
-             (setf ,bottom (?'row ,findbtm)))
+             (setf ,bottom (if (live-iptr-p ,findbtm) (?'row ,findbtm) 1)))
            (cclet* ((,findrgt (!'find ,whole "*" ,from +xl-values+
                                 +xl-whole+ +xl-by-columns+
                                 +xl-previous+)))
-             (setf ,right (?'column ,findrgt)))))
+             (setf ,right (if (live-iptr-p ,findrgt) (?'column ,findrgt) 1)))))
        ,@body)))
 
 (defun used-range (worksheet)

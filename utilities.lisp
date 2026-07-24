@@ -64,7 +64,7 @@
            (com::co-uninitialize))))))|#
 
 
-;;; Construct new pathname based on DIRECTORY and FILE.
+#|;;; Construct new pathname based on DIRECTORY and FILE.
 (defun file-in-dir (directory file &key (namestring nil))
   (let* ((filename (pathname-name file))
          (filetype (pathname-type file))
@@ -72,7 +72,7 @@
                                   :defaults directory)))
     (if namestring
       (namestring new)
-      new)))
+      new)))|#
 
 
 ;;; Collect and print the FLI templates needed to evaluate BODY.

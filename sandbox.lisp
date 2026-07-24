@@ -487,10 +487,10 @@ Most ezt egy ciklusba, uniques @ tks
 
 
 
-(defun m ()
+#|(defun m ()
   (enable-ccom-syntax)
   (let ((result (read-from-string
-   "(defmacro with-workbook ((&key (app       nil)
+   (defmacro with-workbook ((&key (app       nil)
                                (!'wbook     'wbook)
                                (use       nil)
                                (open      nil)
@@ -537,12 +537,19 @@ Most ezt egy ciklusba, uniques @ tks
 (defun o ()
   (enable-ccom-syntax)
   (print (read-from-string "(?'prop obj arg1 arg2)"))
-  (disable-ccom-syntax))
+  (disable-ccom-syntax))|#
   
 
   
+(defun xt ()
+  (with-ccom-context 
+    (with-local-copies ((ff "C:\\Users\\cselovszkid\\Downloads\\smrg-teszt\\tesztadatok.xlsx"))
+      (with-workbook (:open ff :wsvars (ws1) :save t)
+        (setf (xcell ws1 1 25) "hihihi!")))))
 
 
 
+
+1 25
 
 #.(disable-ccom-syntax)

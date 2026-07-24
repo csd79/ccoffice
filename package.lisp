@@ -5,12 +5,12 @@
 
 
 (defpackage #:ccoffice
-  (:use #:cl #:achar #:ccom4)
+  (:use #:cl #:utils #:achar #:ccom4)
   (:export #:column
            #:cell-index
            #:letters-column
 ;           #:with-com-initialized
-           #:file-in-dir
+;           #:file-in-dir
            #:print-used-fli-templates
            #:excellerate
            #:column->row
