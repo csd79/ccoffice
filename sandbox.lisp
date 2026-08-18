@@ -149,7 +149,7 @@
 ;;; Splt strikes back
 
 
-(defparameter *in* "C:\\Users\\cselovszkid\\Downloads\\2024.11.29. Splt strikes back\\_TK_Adatok szerzõdéshez.xlsx")
+#|(defparameter *in* "C:\\Users\\cselovszkid\\Downloads\\2024.11.29. Splt strikes back\\_TK_Adatok szerzõdéshez.xlsx")
 (defparameter *out* "C:\\Users\\cselovszkid\\Downloads\\2024.11.29. Splt strikes back\\out\\")
 
 
@@ -200,7 +200,7 @@
       (!'saveas form (concatenate 'string *out* "Szegedi TK" " - Adatok szerzõdéshez.xlsx"))
       (delete-rows-unless form #'(lambda (row)
                                    (string= (xcref row 0) "Szegedi Tankerületi Központ"))
-                          :start 3))))
+                          :start 3))))|#
 #|
 
 Most ezt egy ciklusba, uniques @ tks
@@ -212,7 +212,7 @@ Most ezt egy ciklusba, uniques @ tks
 ;;; Sandbox #2
 
 
-(defparameter *kl* "C:\\Users\\cselovszkid\\Downloads\\laptop helyett.xlsx")
+;(defparameter *kl* "C:\\Users\\cselovszkid\\Downloads\\laptop helyett.xlsx")
 
 #|(defun w ()
   (let ((ccom4::*property-accessors-on* t))
@@ -254,7 +254,7 @@ Most ezt egy ciklusba, uniques @ tks
 ;;; Sandbox #3: not my type
 
 
-(defparameter *a* "c:\\Users\\cselovszkid\\Desktop\\teszt.xlsx")
+;(defparameter *a* "c:\\Users\\cselovszkid\\Desktop\\teszt.xlsx")
 
 
 #|(defun xl-error-p (value2)
@@ -265,10 +265,10 @@ Most ezt egy ciklusba, uniques @ tks
                             (-2146826288 . :null))))))|#
 
 
-(defun xl-spill-range (range)
+#|(defun xl-spill-range (range)
   (cclet* ((spillparent (?'spillparent range)))
     (unless (eq spillparent :empty)
-      (?'spillingtorange spillparent))))
+      (?'spillingtorange spillparent))))|#
 
 
 
@@ -297,7 +297,7 @@ Most ezt egy ciklusba, uniques @ tks
 
 
 
-(defun b (&optional (r 5))
+#|(defun b (&optional (r 5))
   (with-property-accessors
     (setf (property-accessors-on) t)
     (with-workbook (:open *a* :wsvars (ws1 ws2) :save nil :close t)
@@ -326,7 +326,7 @@ Most ezt egy ciklusba, uniques @ tks
 ;      (print (?'text (xl-spill-range (range ws2 5 17)))) ; Spillrange-re a TEXT valamiért nem mûködik.
 ;      (print (?'value2 (xl-spill-range (range ws2 2 16))))
       ))
-
+|#
 
 
 
@@ -335,7 +335,7 @@ Most ezt egy ciklusba, uniques @ tks
 
 
 
-(defparameter *f* "c:\\Users\\cselovszkid\\common-lisp\\msoffice\\ff.xlsx")
+#|(defparameter *f* "c:\\Users\\cselovszkid\\common-lisp\\msoffice\\ff.xlsx")
 
 
 
@@ -363,7 +363,7 @@ Most ezt egy ciklusba, uniques @ tks
   (with-property-accessors
     (setf (property-accessors-on) t)
     (with-workbook (:open *f* :wsvars (ws1) :read-only nil :save t)
-      (e 'value2 ws1))))
+      (e 'value2 ws1))))|#
 
 
 
@@ -374,7 +374,7 @@ Most ezt egy ciklusba, uniques @ tks
 ;;; setf
 
 
-(defparameter *english-numbers* (make-hash-table :test #'equal))
+#|(defparameter *english-numbers* (make-hash-table :test #'equal))
 
 (defun eninit ()
   (setf (gethash "one" *english-numbers*) 1
@@ -448,7 +448,7 @@ Most ezt egy ciklusba, uniques @ tks
                                     ,getter-form)))
                         ,setter-form
                         ,new-value-var)))
-              `(cdr ,cons-found)))))
+              `(cdr ,cons-found)))))|#
 
 
 
@@ -456,9 +456,9 @@ Most ezt egy ciklusba, uniques @ tks
 ;;; compiled closure
 
 
-(defun aa ()
+#|(defun aa ()
   #'(lambda (v)
-      (* v 3)))
+      (* v 3)))|#
 
 
 

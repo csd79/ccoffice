@@ -12,25 +12,32 @@
 (defconstant +xl-calculation-automatic+ -4105)
 (defconstant +xl-calculation-manual+    -4135)
 
-(defmacro excellerate ((excel) &body body)
-  "Execute BODY using faster Excel interaction."
+(defmacro excellerate ((excel &optional (calc-p nil)) &body body)
+  "Execute BODY using faster Excel interaction. To set CALCULATION, there has to be an open workbook."
+  #|
+                       Should try to activate the first workbook open, and only set calculoation after
+                       But then the active workbook should be saved first!!
+                       |#
+
   `(let ((su (?'screenupdating ,excel))
          (da (?'displayalerts  ,excel))
-;         (c  (?'calculation    ,excel))
+         (c  (?'calculation    ,excel))
          (ee (?'enableevents   ,excel)))
      (unwind-protect 
          (progn
+           (when ,calc-p
+             (setf (?'calculation    ,excel) +xl-calculation-manual+))
+;             (setf (?'calculation    ,excel) -4135))
            (setf (?'screenupdating ,excel) nil
-                 (?'displayalerts  ,excel) nil
-;                 (?'calculation    ,excel) +xl-calculation-manual+
+                 (?'displayalerts  ,excel) nil                 
                  (?'enableevents   ,excel) nil)
            ,@body)
        (progn
+         (when ,calc-p (setf (?'calculation ,excel) c))
          (setf
-;          (?'calculation    ,excel) c
-               (?'displayalerts  ,excel) da
-               (?'screenupdating ,excel) su
-               (?'enableevents   ,excel) ee)))))
+          (?'displayalerts  ,excel) da
+          (?'screenupdating ,excel) su
+          (?'enableevents   ,excel) ee)))))
 
 (defun column->row (array &key (element-type t) (getter #'identity))
   "Transpose a column (an (n 0) array) into a vector."
@@ -161,20 +168,19 @@
   "Delete columns between START and END."
   (!'delete (?'entirecolumn (range wsheet start 1 end 1))))
 
-(defun empty-cell-p (value)
-  "Does VALUE indicate an empty cell?"
-  (or (and (stringp value)
-           (string= value ""))
-      (and (symbolp value)
-           (member value '(empty :empty)))
-      (null value)))
+;(eval-when (:compile-toplevel)
+  (defun empty-cell-p (value)
+    "Does VALUE indicate an empty cell?"
+    (or (and (stringp value)
+             (string= value ""))
+        (and (symbolp value)
+             (member value '(empty :empty)))
+        (null value)))
+;  )
 
 (deftype empty-cell ()
   "Does value indicate an empty cell?"
-#|  `(or (and string (satisfies ,#'(lambda (str) (string= str ""))))
-       (and symbol (member empty :empty))
-       null))|#
-  (satisfies empty-cell-p))
+  '(satisfies empty-cell-p))
 
 
 ;;; ----------------------------------------------------------------------
@@ -302,7 +308,7 @@
   "Find the column that has TITLE in its header."
   (with-used-range (worksheet left top right bottom)
     (let ((header (?'value2 (range worksheet left header-row right header-row))))
-;      (declare (ignore bottom))
+    (declare (ignore bottom)) ;;;;;;;;; no working
       (if (arrayp header)
         (if from-end
           (loop for i from (1- (or end right)) downto (1- (or start left))
