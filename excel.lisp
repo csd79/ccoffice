@@ -271,7 +271,21 @@
                               (?'application global))))
               (,wbooks  (?'workbooks ,app-obj))
               (,doc-obj (or (when (typep ,use 'com::com-interface) ,use)
-                            (when ,open (!'open ,wbooks ,open nil ,read-only))
+                            (when ,open
+
+                              (cclet* ((new-wb nil))
+                                (unwind-protect ; In case it is not an Excel file
+                                    (progn
+                                      (setf (?'displayalerts ,app-obj) nil
+                                            (?'enableevents ,app-obj) nil)
+                                      (ignore-errors 
+                                        (setf new-wb (!'open ,wbooks ,open nil ,read-only))))
+                                  (setf (?'enableevents ,app-obj) t
+                                        (?'displayalerts ,app-obj) t))
+                                new-wb)
+                              )
+                               
+                            
                             (!'add ,wbooks)))
               (,wbook   ,doc-obj)
               (,wsheets (?'worksheets ,doc-obj))
