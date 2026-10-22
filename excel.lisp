@@ -12,13 +12,11 @@
 (defconstant +xl-calculation-automatic+ -4105)
 (defconstant +xl-calculation-manual+    -4135)
 
-(defmacro excellerate ((excel &optional (calc-p nil)) &body body)
-  "Execute BODY using faster Excel interaction. To set CALCULATION, there has to be an open workbook."
-  #|
-                       Should try to activate the first workbook open, and only set calculoation after
-                       But then the active workbook should be saved first!!
-                       |#
 
+#|(defmacro excellerate ((excel &optional (calc-p nil)) &body body)
+  "Execute BODY using faster Excel interaction. To set CALCULATION, there has to be an open workbook."
+;  Should try to activate the first workbook open, and only set calculoation after
+;  But then the active workbook should be saved first!!
   `(let ((su (?'screenupdating ,excel))
          (da (?'displayalerts  ,excel))
          (c  (?'calculation    ,excel))
@@ -27,7 +25,6 @@
          (progn
            (when ,calc-p
              (setf (?'calculation    ,excel) +xl-calculation-manual+))
-;             (setf (?'calculation    ,excel) -4135))
            (setf (?'screenupdating ,excel) nil
                  (?'displayalerts  ,excel) nil                 
                  (?'enableevents   ,excel) nil)
@@ -37,7 +34,32 @@
          (setf
           (?'displayalerts  ,excel) da
           (?'screenupdating ,excel) su
+          (?'enableevents   ,excel) ee)))))|#
+(defmacro excellerate ((excel &key (screen t) (alerts t) (calc t) (events t) (all t)) &body body)
+  "Execute BODY using faster Excel interaction. To set CALCULATION, there has to be an open workbook."
+  `(let ((su (?'screenupdating ,excel))
+         (da (?'displayalerts  ,excel))
+         (c  (?'calculation    ,excel))
+         (ee (?'enableevents   ,excel)))
+     (unwind-protect 
+         (progn
+           (setf (?'screenupdating ,excel) (and ,screen ,all nil)
+                 (?'displayalerts  ,excel) (and ,alerts ,all nil)
+                 (?'enableevents   ,excel) (and ,events ,all nil))
+           (unless (zerop (?'count (?'workbooks ,excel)))
+             (setf (?'calculation ,excel) (if (and ,calc ,all)
+                                            +xl-calculation-manual+
+                                            +xl-calculation-automatic+)))
+           ,@body)
+       (progn
+         (unless (zerop (?'count (?'workbooks ,excel)))
+           (when (/= (?'calculation ,excel) c)
+             (setf (?'calculation ,excel) c)))
+         (setf
+          (?'displayalerts  ,excel) da
+          (?'screenupdating ,excel) su
           (?'enableevents   ,excel) ee)))))
+
 
 (defun column->row (array &key (element-type t) (getter #'identity))
   "Transpose a column (an (n 0) array) into a vector."
@@ -49,6 +71,7 @@
                          (aref array i 0))))
     result))
 
+
 (defun excel-value-as-number (value) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   "Try to interpret VALUE as a number."
   (let ((not-string (if (stringp value)
@@ -59,12 +82,14 @@
       "Value ~a is not readable as number." not-string)
     not-string))
 
+
 (defun parse-string/ (value &key (numproc #'identity) (ignore-error t))
   "Turn VALUE (a string or a number) into a string."
   (typecase value
     (string value)
     (number (format nil "~d" (funcall numproc value)))
     (t      (unless ignore-error (error "Value should be of type NUMBER or STRING.")))))
+
 
 (defun parse-number (value &key (strproc #'read-from-string) (ignore-error t))
   "Turn VALUE (a string or a number) into a number."
@@ -105,12 +130,14 @@
 (defconstant +xl-whole+                1)
 (defconstant +xl-previous+             2)
 
+
 (defun range (worksheet &optional (x1 nil) (y1 nil) (x2 nil) (y2 nil))
   "Create range object within given 'coordinates'."
   (let ((upper-left (cell-index x1 y1)))
     (if (and x2 y2)
       (?'range worksheet upper-left (cell-index x2 y2))
       (?'range worksheet upper-left))))
+
 
 (defmacro with-used-range ((worksheet left top right bottom) &body body)
   "Edges of the used range of WORKSHEET."
@@ -136,15 +163,18 @@
              (setf ,right (if (live-iptr-p ,findrgt) (?'column ,findrgt) 1)))))
        ,@body)))
 
+
 (defun used-range (worksheet)
   "The range of all content within WORKSHEET."
   (with-used-range (worksheet left top right bottom)
     (range worksheet left top right bottom)))
 
+
 (defun last-row (worksheet)
   "The number of last row (& last column) of WORKSHEET."
   (with-used-range (worksheet left top right bottom)
     (values bottom right)))
+
 
 (defmacro with-range ((range left top right bottom) &body body)
   "Edges of RANGE."
@@ -160,15 +190,17 @@
        (setf ,bottom (1- (+ ,top (?'count ,rows)))))
      ,@body)))
 
+
 (defun delete-rows (wsheet start end)
   "Delete rows between START and END."
   (!'delete (?'entirerow (range wsheet 1 start 1 end))))
+
 
 (defun delete-columns (wsheet start end)
   "Delete columns between START and END."
   (!'delete (?'entirecolumn (range wsheet start 1 end 1))))
 
-;(eval-when (:compile-toplevel)
+
   (defun empty-cell-p (value)
     "Does VALUE indicate an empty cell?"
     (or (and (stringp value)
@@ -176,7 +208,7 @@
         (and (symbolp value)
              (member value '(empty :empty)))
         (null value)))
-;  )
+
 
 (deftype empty-cell ()
   "Does value indicate an empty cell?"
@@ -196,6 +228,7 @@
 (defconstant +xl-align-center+                   -4108)
 (defconstant +rgb-black+                             0)
 
+
 (defun copy-formatting (src dst)
   "Copy cell formatting between ranges."
   (!'copy src)
@@ -203,16 +236,19 @@
   (!'pastespecial dst +xl-paste-comments+)
   (!'pastespecial dst +xl-paste-validation+))
 
+
 (defun autofit-cols (worksheet)
   "Set auto width for all columns."
   (cclet* ((range (?'columns worksheet)))
     (!'autofit range)))
+
 
 (defun font (range &optional first last)
   "Target range for font formatting."
   (?'font (if (and first last)
             (?'characters range first last)
             range)))
+
 
 (defparameter *style-elements*
   `(:wrap-text     (:prop   "WrapText"            ,t)
@@ -221,6 +257,7 @@
     :border        (:method "BorderAround"        ,:null ,:null ,:null ,+rgb-black+)
     :bold          (:prop   "Bold"                ,t))
   "Style definitions for APPLY-STYLE.")
+
 
 (defun apply-style (range style)
   "Apply any style defined in *STYLE-ELEMENTS*."
@@ -246,13 +283,15 @@
       (setf (?'displayalerts application) nil)
       (!'quit application))))
 
+
 (defun window-visible (workbook &optional (window 1) (visible t))
   "Change window visibility."
   (cclet* ((windows (?'windows workbook))
            (window  (?'item windows window)))
     (setf (?'visible window) visible)))
 
-(defmacro with-workbook ((&key (app       nil)
+
+#|(defmacro with-workbook ((&key (app       nil)
                                (wbook     'wbook)
                                (use       nil)
                                (open      nil)
@@ -272,7 +311,6 @@
               (,wbooks  (?'workbooks ,app-obj))
               (,doc-obj (or (when (typep ,use 'com::com-interface) ,use)
                             (when ,open
-
                               (cclet* ((new-wb nil))
                                 (unwind-protect ; In case it is not an Excel file
                                     (progn
@@ -282,10 +320,7 @@
                                         (setf new-wb (!'open ,wbooks ,open nil ,read-only))))
                                   (setf (?'enableevents ,app-obj) t
                                         (?'displayalerts ,app-obj) t))
-                                new-wb)
-                              )
-                               
-                            
+                                new-wb))
                             (!'add ,wbooks)))
               (,wbook   ,doc-obj)
               (,wsheets (?'worksheets ,doc-obj))
@@ -296,7 +331,6 @@
        (unwind-protect
            (excellerate (,app-obj)
              (when (eq ,use ,doc-obj)
-;               (print "сhhссссс")
                (com:add-ref ,doc-obj))
              (window-visible ,doc-obj 1 t)
              ,@body)
@@ -308,7 +342,52 @@
              (setf (?'displayalerts ,app-obj) nil)
              (!'close ,doc-obj)
              (unless ,app
-               (!'quit ,app-obj))))))))
+               (!'quit ,app-obj))))))))|#
+(defmacro with-workbook ((&key (app  nil) (wbook  'wbook) (use       nil)
+                               (open nil) (wsvars '())    (read-only nil)    
+                               (save nil) (close  t))
+                         &body body)
+  "Create bindings for an Excel workbook with optional method calls (open, save at the end, close)."
+  (let ((app-obj (gensym))
+        (wbooks  (gensym))
+        (doc-obj (gensym))
+        (wsheets (gensym)))
+    `(with-ccom-context
+       (cclet* ((,app-obj (or ,app 
+                              (cclet* ((global (com:create-object :progid "Excel.Application")))
+                                (?'application global))))
+                (,wbooks  (?'workbooks ,app-obj))
+                (,doc-obj (or (when (typep ,use 'com::com-interface) ,use)
+                              (when ,open
+                                (cclet* ((new-wb nil))
+                                  (excellerate (,app-obj :screen nil :calc nil)
+                                    (ignore-errors 
+                                      (setf new-wb (!'open ,wbooks ,open nil ,read-only))))
+                                  new-wb))
+                              (!'add ,wbooks)))
+                (,wbook   ,doc-obj)
+                (,wsheets (?'worksheets ,doc-obj))
+                ,@(loop for n from 1
+                        for var in wsvars
+                        when var collect
+                        (list var `(?'item ,wsheets ,n))))
+         (unwind-protect 
+             (excellerate (,app-obj)
+               (when (eq ,use ,doc-obj)
+                 (com:add-ref ,doc-obj))
+               (window-visible ,doc-obj 1 t)
+               ,@body)
+           (progn 
+             (when (and ,save (not ,read-only))
+               (!'save ,doc-obj))
+             (when ,close
+               (let ((da (?'displayalerts ,app-obj)))
+                 (setf (?'saved ,doc-obj) t
+                       (?'displayalerts ,app-obj) nil)
+                 (!'close ,doc-obj)
+                 (setf (?'displayalerts ,app-obj) da))
+               (unless ,app
+                 (!'quit ,app-obj)))))))))
 
 
 ;;; ----------------------------------------------------------------------
@@ -316,6 +395,7 @@
 
 
 (defparameter *header-row* 1)
+
 
 (defun title-column (worksheet title &key (key #'identity) (header-row *header-row*) (test #'equalp)
                          (from-end nil) (start nil) (end nil))
@@ -333,6 +413,7 @@
                 thereis (and (funcall test title v) (1+ i))))
         (and (funcall test title header) left)))))
 
+
 (defun column-designator-p (designator)
   "Column designator type and resolution."
   (or (and (integerp designator)
@@ -341,9 +422,11 @@
            (<= (length (symbol-name designator)) 3))
       (stringp designator)))
 
+
 (deftype column-designator ()
   "Integer, keyword (:a) or string (header in row 1)."
   '(satisfies column-designator-p))
+
 
 (defun resolve-column-designator (designator &optional worksheet)
   "Convert column designator to 1-base column index."
@@ -365,6 +448,7 @@
           thereis (and (funcall function v value)
                        (+ row 2)))))
 
+
 (defun row-designator-p (designator)
   "Row designator type and resolution"
   (or (and (integerp designator)
@@ -375,22 +459,26 @@
              (functionp (third designator))
              t))))
 
+
 (deftype row-designator ()
   "Integer or a list of parameters for LOCATE-ROW."
   '(satisfies row-designator-p))
+
 
 (defun resolve-row-designator (designator &optional worksheet)
   "Convert row designator to 1-base row index."
   (assert (typep designator 'row-designator)
       (designator)
-    "Invalid row designator ~a - should be az integer or a list of a column designator, a value and a predicate function" designator)
+    "Invalid row designator ~a - should be az integer or a list of a column designator, a value and a predicate function"
+    designator)
   (typecase designator
     (integer designator)
     (list    (destructuring-bind (column-designator value &optional (function #'equalp))
                  designator
                (locate-row worksheet column-designator value function)))))
 
-(defun xcell-core (worksheet column row &key (value nil value-supplied-p) (prop "value2"))
+
+#|(defun xcell-core (worksheet column row &key (value nil value-supplied-p) (prop "value2"))
   "Main body of XCELL and SET-XCELL."
   (let ((row-final    (resolve-row-designator row worksheet))
         (column-final (resolve-column-designator column worksheet)))
@@ -400,11 +488,29 @@
 #|      (setf (funcall prop (range worksheet column-final row-final)) value)
       (funcall prop (range worksheet column-final row-final)))))|#
 
+
 (defun xcell (worksheet column row &key (prop "value2"))
   "Simplified cell reference."
   (xcell-core worksheet column row :prop prop))
 
 (defun (setf xcell) (value worksheet column row &key (prop "value2"))
+  "Simplified cell assignment."
+  (xcell-core worksheet column row :value value :prop prop))|#
+(defun xcell-core (worksheet column row &key (new-value nil new-value-supplied-p) (prop 'value2) (args '()))
+  "Main body of XCELL and SET-XCELL."
+  (let ((row-final    (resolve-row-designator row worksheet))
+        (column-final (resolve-column-designator column worksheet)))
+    (if new-value-supplied-p
+      (setf (?prop (range worksheet column-final row-final)) new-value)
+      (?prop (range worksheet column-final row-final)))))
+
+
+(defun xcell (worksheet column row &key (prop 'value2))
+  "Simplified cell reference."
+  (xcell-core worksheet column row :prop prop))
+
+
+(defun (setf xcell) (value worksheet column row &key (prop 'value2))
   "Simplified cell assignment."
   (xcell-core worksheet column row :value value :prop prop))
 
@@ -448,6 +554,7 @@
 (defparameter *xrange-target-too-small* :fill-to-limit "Possible values: :ERROR, :FILL-TO-LIMIT")
 (defparameter *xrange-target-too-large* :restrict "Possible values: :ERROR, :FULFILL, :RESTRICT")
 
+
 (defun set-xrange-worker (worksheet c1 r1 c2 r2 value prop)
   "Multiple cell range assignment."
   (let ((range-width  (1+ (abs (- c1 c2))))
@@ -468,7 +575,8 @@
                  r2
                  (min r2 (1- (+ r1 value-height))))))
       ;; Assign VALUE to a downsized target range.
-      (setf (com:invoke-dispatch-get-property (range worksheet c1 r1 c2r r2r) prop) value)
+      (setf (?prop (range worksheet c1 r1 c2r r2r)) value)
+;      (setf (com:invoke-dispatch-get-property (range worksheet c1 r1 c2r r2r) prop) value)
 ;      (setf (funcall prop (range worksheet c1 r1 c2r r2r)) value)
       ;; Add fill when needed
       (when (eq *xrange-target-too-large* :fulfill)
@@ -478,19 +586,23 @@
                            (> range-height value-height))))
           ;; Right side fill
           (when rightp
-            (setf (com:invoke-dispatch-get-property (range worksheet (1+ c2r) r1 c2 r2r) prop)
+            (setf (?prop (range worksheet (1+ c2r) r1 c2 r2r))
+;            (setf (com:invoke-dispatch-get-property (range worksheet (1+ c2r) r1 c2 r2r) prop)
 ;            (setf (funcall prop (range worksheet (1+ c2r) r1 c2 r2r))
                   *xrange-default-value*))
           ;; Lower fill
           (when lowerp
-            (setf (com:invoke-dispatch-get-property (range worksheet c1 (1+ r2r) c2r r2) prop)
+            (setf (?prop (range worksheet c1 (1+ r2r) c2r r2))
+;            (setf (com:invoke-dispatch-get-property (range worksheet c1 (1+ r2r) c2r r2) prop)
 ;            (setf (funcall prop (range worksheet c1 (1+ r2r) c2r r2))
                   *xrange-default-value*))
           ;; Lower right fill
           (when (and rightp lowerp)
-            (setf (com:invoke-dispatch-get-property (range worksheet (1+ c2r) (1+ r2r) c2 r2) prop)
+            (setf (?prop (range worksheet (1+ c2r) (1+ r2r) c2 r2))
+;            (setf (com:invoke-dispatch-get-property (range worksheet (1+ c2r) (1+ r2r) c2 r2) prop)
 ;            (setf (funcall prop (range worksheet (1+ c2r) (1+ r2r) c2 r2))
                   *xrange-default-value*)))))))
+
 
 (defun precide-xrange (worksheet c1 r1 c2 r2 value prop)
   "Prefilter arg combinations that yield simple assignment or no assignment."
@@ -508,9 +620,11 @@
       (error "Cannot assign ~a to a single cell." value)))
    ;; Value is an atom, will be assigned to every cell in range.
    ((and (atom value)
-         (not (arrayp value)))
+         (or (stringp value)
+             (not (arrayp value))))
 ;    (setf (funcall prop (range worksheet c1 r1 c2 r2)) value))
-    (setf (com:invoke-dispatch-get-property (range worksheet c1 r1 c2 r2) prop) value))
+;    (setf (com:invoke-dispatch-get-property (range worksheet c1 r1 c2 r2) prop) value))
+    (setf (?prop (range worksheet c1 r1 c2 r2)) value))
    ;; Value is a list or a vector: convert value to a 2D array row.
    ((or (listp   value)
         (vectorp value))
@@ -530,7 +644,8 @@
    ;; Otherwise, set range to values in collection.
    (t (set-xrange-worker worksheet c1 r1 c2 r2 value prop))))
 
-(defun xrange-core (worksheet c1 r1 c2 r2 &key (value nil value-supplied-p) (prop "value2"))
+
+(defun xrange-core (worksheet c1 r1 c2 r2 &key (value nil value-supplied-p) (prop 'value2))
   "Main body of XRANGE and SET-XRANGE."
   (let ((c1final (resolve-column-designator c1 worksheet))
         (c2final (resolve-column-designator c2 worksheet))
@@ -538,13 +653,16 @@
         (r2final (resolve-row-designator r2 worksheet)))
     (if value-supplied-p
       (precide-xrange worksheet c1final r1final c2final r2final value prop)
-      (com:invoke-dispatch-get-property (range worksheet c1final r1final c2final r2final) prop))))
+      (?prop (range worksheet c1final r1final c2final r2final)))))
+;      (com:invoke-dispatch-get-property (range worksheet c1final r1final c2final r2final) prop))))
 
-(defun xrange (worksheet c1 r1 c2 r2 &key (prop "value2"))
+
+(defun xrange (worksheet c1 r1 c2 r2 &key (prop 'value2))
   "Simplified cell range reference."
   (xrange-core worksheet c1 r1 c2 r2 :prop prop))
 
-(defun (setf xrange) (value worksheet c1 r1 c2 r2 &key (prop "value2"))
+
+(defun (setf xrange) (value worksheet c1 r1 c2 r2 &key (prop 'value2))
   "Simplified cell range assingment."
   (xrange-core worksheet c1 r1 c2 r2 :value value :prop prop))
 
