@@ -43,4 +43,31 @@
 
 
 
+#|
+(destructuring-bind (a b &optional c &rest args) expr
+  (let ((op-name (symbol-name a)))
+    (cond (;; !SYMBOL
+           (and (> (length op-name) 1)
+                (member (char op-name 0) '(#\! #\?) :test #'char=))
+           (dispatch-expr (char op-name 0) b
+                          (intern-by-name (subseq op-name 1) *package*)
+                          (if c (cons c args) args)))
+          (;; !'SYMBOL
+           (and (member op-name '("!" "?") :test #'string=)
+                (listp b)
+                (eq (first b) 'quote))
+           (dispatch-expr (char op-name 0) c b args))
+          (;; Otherwise, return the expression.
+           t expr))))
+|#
+
+
+;(defun tt ()
+  
+
+
+
+
+
+
 #.(disable-ccom-syntax)

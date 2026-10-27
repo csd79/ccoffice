@@ -131,11 +131,19 @@
 (defconstant +xl-previous+             2)
 
 
-(defun range (worksheet &optional (x1 nil) (y1 nil) (x2 nil) (y2 nil))
+#|(defun range (worksheet &optional (x1 nil) (y1 nil) (x2 nil) (y2 nil))
   "Create range object within given 'coordinates'."
   (let ((upper-left (cell-index x1 y1)))
     (if (and x2 y2)
       (?'range worksheet upper-left (cell-index x2 y2))
+      (?'range worksheet upper-left))))|#
+(defun range (worksheet &optional (x1 nil) (y1 nil) (x2 nil) (y2 nil))
+  "Create range object within given 'coordinates'."
+  (let* ((x1* (if x1 (resolve-column-designator x1) x1))
+         (x2* (if x2 (resolve-column-designator x2) x2))
+         (upper-left (cell-index x1* y1)))
+    (if (and x2* y2)
+      (?'range worksheet upper-left (cell-index x2* y2))
       (?'range worksheet upper-left))))
 
 
@@ -225,8 +233,23 @@
 (defconstant +xl-paste-formulas+                 -4123)
 (defconstant +xl-paste-formulas-and-number-formats+ 11)
 (defconstant +xl-paste-all+                      -4104)
-(defconstant +xl-align-center+                   -4108)
+;(defconstant +xl-align-center+                   -4108)
 (defconstant +rgb-black+                             0)
+(defconstant +xl-inside-horizontal+                 12)
+(defconstant +xl-inside-vertical+                   11)
+(defconstant +xl-halign-center+                  -4108)
+(defconstant +xl-halign-center-across-selection+     7)
+(defconstant +xl-halign-distributed+             -4117)
+(defconstant +xl-halign-fill+                        5)
+(defconstant +xl-halign-general+                     1)
+(defconstant +xl-halign-justify+                 -4130)
+(defconstant +xl-halign-left+                    -4131)
+(defconstant +xl-halign-right+                   -4152)
+(defconstant +xl-valign-bottom+                  -4107)
+(defconstant +xl-valign-center+                  -4108)
+(defconstant +xl-valign-distributed+             -4117)
+(defconstant +xl-valign-justify+                 -4130)
+(defconstant +xl-valign-top+                     -4160)
 
 
 (defun copy-formatting (src dst)
@@ -252,8 +275,8 @@
 
 (defparameter *style-elements*
   `(:wrap-text     (:prop   "WrapText"            ,t)
-    :halign-center (:prop   "HorizontalAlignment" ,+xl-align-center+)
-    :valign-center (:prop   "VerticalAlignment"   ,+xl-align-center+)
+    :halign-center (:prop   "HorizontalAlignment" ,+xl-halign-center+)
+    :valign-center (:prop   "VerticalAlignment"   ,+xl-valign-center+)
     :border        (:method "BorderAround"        ,:null ,:null ,:null ,+rgb-black+)
     :bold          (:prop   "Bold"                ,t))
   "Style definitions for APPLY-STYLE.")
@@ -496,23 +519,24 @@
 (defun (setf xcell) (value worksheet column row &key (prop "value2"))
   "Simplified cell assignment."
   (xcell-core worksheet column row :value value :prop prop))|#
-(defun xcell-core (worksheet column row &key (new-value nil new-value-supplied-p) (prop 'value2) (args '()))
+(defun xcell-core (worksheet column row &key (new-value nil new-value-supplied-p) (prop 'value2) (rest-args '()))
   "Main body of XCELL and SET-XCELL."
-  (let ((row-final    (resolve-row-designator row worksheet))
-        (column-final (resolve-column-designator column worksheet)))
+  (cclet* ((row-final    (resolve-row-designator row worksheet))
+           (column-final (resolve-column-designator column worksheet))
+           (range        (range worksheet column-final row-final)))
     (if new-value-supplied-p
-      (setf (?prop (range worksheet column-final row-final)) new-value)
-      (?prop (range worksheet column-final row-final)))))
+      (setf (?prop range) new-value)
+      (?prop range))))
 
 
-(defun xcell (worksheet column row &key (prop 'value2))
+(defun xcell (worksheet column row &key (prop 'value2) (rest-args '()))
   "Simplified cell reference."
-  (xcell-core worksheet column row :prop prop))
+  (xcell-core worksheet column row :prop prop :rest-args rest-args))
 
 
-(defun (setf xcell) (value worksheet column row &key (prop 'value2))
+(defun (setf xcell) (value worksheet column row &key (prop 'value2) (rest-args '()))
   "Simplified cell assignment."
-  (xcell-core worksheet column row :value value :prop prop))
+  (xcell-core worksheet column row :new-value value :prop prop :rest-args rest-args))
 
 
 ;;; ----------------------------------------------------------------------
@@ -645,14 +669,14 @@
    (t (set-xrange-worker worksheet c1 r1 c2 r2 value prop))))
 
 
-(defun xrange-core (worksheet c1 r1 c2 r2 &key (value nil value-supplied-p) (prop 'value2))
+(defun xrange-core (worksheet c1 r1 c2 r2 &key (new-value nil value-supplied-p) (prop 'value2))
   "Main body of XRANGE and SET-XRANGE."
   (let ((c1final (resolve-column-designator c1 worksheet))
         (c2final (resolve-column-designator c2 worksheet))
         (r1final (resolve-row-designator r1 worksheet))
         (r2final (resolve-row-designator r2 worksheet)))
     (if value-supplied-p
-      (precide-xrange worksheet c1final r1final c2final r2final value prop)
+      (precide-xrange worksheet c1final r1final c2final r2final new-value prop)
       (?prop (range worksheet c1final r1final c2final r2final)))))
 ;      (com:invoke-dispatch-get-property (range worksheet c1final r1final c2final r2final) prop))))
 
@@ -664,7 +688,7 @@
 
 (defun (setf xrange) (value worksheet c1 r1 c2 r2 &key (prop 'value2))
   "Simplified cell range assingment."
-  (xrange-core worksheet c1 r1 c2 r2 :value value :prop prop))
+  (xrange-core worksheet c1 r1 c2 r2 :new-value value :prop prop))
 
 
 ;;; ----------------------------------------------------------------------
@@ -965,12 +989,28 @@
                      :body  body
                      :index (coerce (nreverse new-index) 'simple-vector)))))
 
-(defmethod xauniques ((obj xarray) column-designator &key (test #'equalp))
-  "Extract unique values from designated column."
+(defmethod xacolumn ((obj xarray) column-designator)
+  "Extract all values from designated column into a list."
   (let ((accumulator '()))
     ;; Collecting all column values
     (do-xarows (row r obj)
       (push (xcref row column-designator) accumulator))
+    (nreverse accumulator)))
+
+#|(defmethod xauniques ((obj xarray) column-designator &key (test #'equalp))
+  "Extract unique values from designated column into a vector."
+  (let ((accumulator '()))
+    ;; Collecting all column values
+    (do-xarows (row r obj)
+      (push (xcref row column-designator) accumulator))
+    ;; Dropping duplicates
+    (when accumulator
+      (coerce (nreverse
+               (remove-duplicates accumulator :test test))
+              'simple-vector))))|#
+(defmethod xauniques ((obj xarray) column-designator &key (test #'equalp))
+  "Extract unique values from designated column into a vector."
+  (let ((accumulator (xacolumn obj column-designator)))
     ;; Dropping duplicates
     (when accumulator
       (coerce (nreverse

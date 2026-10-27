@@ -27,6 +27,30 @@
            #:delete-columns
            #:empty-cell-p
            #:empty-cell
+
+           #:+xl-paste-formats+
+           #:+xl-paste-comments+
+           #:+xl-paste-validation+
+           #:+xl-paste-formulas+
+           #:+xl-paste-formulas-and-number-formats+
+           #:+xl-paste-all+
+           #:+rgb-black+
+           #:+xl-inside-horizontal+
+           #:+xl-inside-vertical+
+           #:+xl-halign-center+
+           #:+xl-halign-center-across-selection+
+           #:+xl-halign-distributed+
+           #:+xl-halign-fill+
+           #:+xl-halign-general+
+           #:+xl-halign-justify+
+           #:+xl-halign-left+
+           #:+xl-halign-right+
+           #:+xl-valign-bottom+
+           #:+xl-valign-center+
+           #:+xl-valign-distributed+
+           #:+xl-valign-justify+
+           #:+xl-valign-top+
+
            #:copy-formatting
            #:autofit-cols
            #:font
@@ -64,6 +88,7 @@
            #:xarows
            #:do-xarows
            #:xaselect
+           #:xacolumn
            #:xauniques
            #:xadouniques
            #:xarray-width
