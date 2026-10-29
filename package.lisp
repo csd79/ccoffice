@@ -12,6 +12,9 @@
 ;           #:with-com-initialized
 ;           #:file-in-dir
            #:print-used-fli-templates
+           #:cms->pts
+           #:rgb
+
            #:excellerate
            #:column->row
            #:excel-value-as-number ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -55,6 +58,42 @@
            #:autofit-cols
            #:font
            #:apply-style
+
+           #:*alignments*
+           #:set-align-grid
+           #:set-font
+           #:merge-range
+           #:set-col-widths
+           #:set-numform
+           #:+xl-validate-custom+
+           #:+xl-validate-date+
+           #:+xl-validate-decimal+
+           #:+xl-validate-input-only+
+           #:+xl-validate-list+
+           #:+xl-validate-text-length+
+           #:+xl-validate-time+
+           #:+xl-validate-whole-number+
+           #:+xl-valid-alert-information+
+           #:+xl-valid-alert-stop+
+           #:+xl-valid-alert-warning+
+           #:+xl-between+
+           #:+xl-equal+
+           #:+xl-greater+
+           #:+xl-greater-equal+
+           #:+xl-less+
+           #:+xl-less-equal+
+           #:+xl-not-between+
+           #:+xl-not-equal+
+           #:*validation*
+           #:set-validation
+           #:*page*
+           #:set-page
+           #:set-page-zoom
+           #:set-print-area
+           #:+xl-page-break-none+
+           #:delete-manual-pagebreaks
+           #:new-pagebreaks
+
            #:close-workbook
            #:with-workbook
            #:title-column

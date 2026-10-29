@@ -81,3 +81,14 @@
      (fli:start-collecting-template-info)
      ,@body
      (fli:print-collected-template-info)))
+
+
+(defun cms->pts (cm &optional (decimals 2))
+  "Convert Centimeters to points."
+  (let ((n (expt 10 (- decimals))))
+    (float (* (round (* cm (/ 72 2.54)) n) n))))
+
+
+(defun rgb (r g b)
+  "Calculate color long from RGB components."
+  (+ (ash b 16) (ash g 8) r))
