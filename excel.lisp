@@ -13,7 +13,7 @@
 (defconstant +xl-calculation-manual+    -4135)
 
 
-(defmacro excellerate ((excel &key (screen t) (alerts t) (calc t) (events t) (all t)) &body body)
+#|(defmacro excellerate ((excel &key (screen t) (alerts t) (calc t) (events t) (all t)) &body body)
   "Execute BODY using faster Excel interaction. To set CALCULATION, there has to be an open workbook."
   `(let ((su (?'screenupdating ,excel))
          (da (?'displayalerts  ,excel))
@@ -36,7 +36,87 @@
          (setf
           (?'displayalerts  ,excel) da
           (?'screenupdating ,excel) su
-          (?'enableevents   ,excel) ee)))))
+          (?'enableevents   ,excel) ee)))))|#
+
+
+(defmacro with-excel-automation ((excel &key
+                                        (all nil all-provided-p)
+                                        (screenupdating all screenupdating-provided-p)
+                                        (displayalerts all displayalerts-provided-p)
+                                        (calculation all calculation-provided-p)
+                                        (enableevents all enableevents-provided-p)
+                                        (printcommunication all printcommunication-provided-p)
+                                        )
+                                 &body body)
+  "Execute BODY using faster Excel interaction. To set CALCULATION, there has to be an open workbook."
+  (let* ((saving  (remove nil (list (when (or all-provided-p screenupdating-provided-p)
+                                      `(su (?'screenupdating ,excel)))
+                                    (when (or all-provided-p displayalerts-provided-p)
+                                      `(da (?'displayalerts ,excel)))
+                                    (when (or all-provided-p calculation-provided-p)
+                                      `(c  (?'calculation ,excel)))
+                                    (when (or all-provided-p enableevents-provided-p)
+                                      `(ee (?'enableevents ,excel)))
+                                    (when (or all-provided-p printcommunication-provided-p)
+                                      `(pc (?'printcommunication ,excel)))
+                                    )))
+#|         (setting (remove nil (list (when (or all-provided-p screenupdating-provided-p)
+                                      `((?'screenupdating ,excel)
+                                        ,(and screenupdating all-provided-p all)))
+                                    (when (or all-provided-p displayalerts-provided-p)
+                                      `((?'displayalerts ,excel)
+                                        ,(and displayalerts all-provided-p all)))
+                                    (when (or all-provided-p enableevents-provided-p)
+                                      `((?'enableevents ,excel)
+                                        ,(and enableevents all-provided-p all))))))|#
+         (setting (remove nil (list (when (or all-provided-p screenupdating-provided-p)
+                                      `((?'screenupdating ,excel) ,screenupdating))
+                                    (when (or all-provided-p displayalerts-provided-p)
+                                      `((?'displayalerts ,excel) ,displayalerts))
+                                    (when (or all-provided-p enableevents-provided-p)
+                                      `((?'enableevents ,excel) ,enableevents))
+                                    (when (or all-provided-p printcommunication-provided-p)
+                                      `((?'printcommunication ,excel) ,printcommunication))
+                                    )))
+         (setcal (remove nil (list (when (or all-provided-p calculation-provided-p)
+                                     `(unless (zerop (?'count (?'workbooks ,excel)))
+                                        (setf (?'calculation ,excel)
+                                              ,(if (and calculation all-provided-p all)
+                                                 +xl-calculation-automatic+
+                                                 +xl-calculation-manual+)))))))
+         (rescal (remove nil (list (when (or all-provided-p calculation-provided-p)
+                                     `(unless (zerop (?'count (?'workbooks ,excel)))
+                                        (setf (?'calculation ,excel) c))))))
+         (restore (remove nil (list (when (or all-provided-p enableevents-provided-p)
+                                      `((?'enableevents ,excel) ee))
+                                    (when (or all-provided-p displayalerts-provided-p)
+                                      `((?'displayalerts ,excel) da))
+                                    (when (or all-provided-p screenupdating-provided-p)
+                                      `((?'screenupdating ,excel) su))
+                                    (when (or all-provided-p printcommunication-provided-p)
+                                      `((?'printcommunication ,excel) pc))
+                                    ))))
+    `(let ,saving
+       (unwind-protect
+           (progn
+             (setf ,@(apply #'append setting))
+             ,@setcal
+             ,@body)
+         (progn
+           ,@rescal
+           (setf ,@(apply #'append restore)))))))
+
+
+
+
+
+
+
+
+                                   
+                          
+                              
+
 
 
 (defun column->row (array &key (element-type t) (getter #'identity))
@@ -446,6 +526,8 @@
 
 (defun new-pagebreaks (wsheet &rest plist)
   "Add an arbitrary number of new page breaks for WSHEET.    (new-pagebreaks ws1 :row 19 :row 36 ... :col 20 ...)"
+  (!'resetallpagebreaks wsheet)
+  (sleep 1)
   (loop for (key val) on plist by #'cddr doing
         (case key
           (:row (cclet* ((hbreaks (?'hpagebreaks wsheet))
@@ -495,7 +577,8 @@
                 (,doc-obj (or (when (typep ,use 'com::com-interface) ,use)
                               (when ,open
                                 (cclet* ((new-wb nil))
-                                  (excellerate (,app-obj :screen nil :calc nil)
+;                                  (excellerate (,app-obj :screenupdating nil :calculation nil)
+                                  (with-excel-automation (,app-obj :screenupdating nil :calculation nil)
                                     (ignore-errors 
                                       (setf new-wb (!'open ,wbooks ,open nil ,read-only))))
                                   new-wb))
@@ -507,7 +590,8 @@
                         when var collect
                         (list var `(?'item ,wsheets ,n))))
          (unwind-protect 
-             (excellerate (,app-obj)
+;             (excellerate (,app-obj)
+             (progn
                (when (eq ,use ,doc-obj)
                  (com:add-ref ,doc-obj))
                (window-visible ,doc-obj 1 t)

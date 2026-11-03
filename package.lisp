@@ -15,7 +15,8 @@
            #:cms->pts
            #:rgb
 
-           #:excellerate
+;           #:excellerate
+           #:with-excel-automation
            #:column->row
            #:excel-value-as-number ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
            #:parse-string/
